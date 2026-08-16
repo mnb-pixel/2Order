@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
-import { Product, CustomizationConfig, DynamicSliderComponent, DynamicCustomField, DynamicFieldChoice, CustomFieldType, SliderMode } from '../../lib/types';
-import { Plus, Trash2, Sliders, Check, Sparkles, Layers, Type, Tag, Palette, ArrowRight } from 'lucide-react';
+import { Product, CustomizationConfig, DynamicSliderComponent, DynamicCustomField, DynamicFieldChoice, CustomFieldType, SliderMode, CustomizationArchetype } from '../../lib/types';
+import { ALL_ALLERGEN_CODES, ALLERGEN_LABELS } from '../../lib/allergens';
+import { Plus, Trash2, Sliders, Layers, Type, Package, AlertTriangle } from 'lucide-react';
 
 interface DynamicCanvasBuilderProps {
   product: Product;
@@ -16,6 +17,7 @@ export const DynamicCanvasBuilder: React.FC<DynamicCanvasBuilderProps> = ({ prod
   const config: CustomizationConfig = product.config || {
     id: `cfg-${product.id}`,
     productId: product.id,
+    archetype: 'recipe_blend',
     sliderMode: 'percentage_100',
     targetTotal: 100,
     targetUnit: '%',
@@ -182,7 +184,22 @@ export const DynamicCanvasBuilder: React.FC<DynamicCanvasBuilderProps> = ({ prod
       {activeSubTab === 'sliders' && (
         <div className="space-y-5">
           {/* General Slider Settings */}
-          <div className="p-4 bg-stone-50 border border-stone-200 rounded-xl grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className="p-4 bg-stone-50 border border-stone-200 rounded-xl grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
+            <div>
+              <label className="font-mono font-bold text-stone-700 block mb-1">Customization-Archetyp</label>
+              <select
+                value={config.archetype || 'recipe_blend'}
+                onChange={(e) => onUpdateConfig({ ...config, archetype: e.target.value as CustomizationArchetype })}
+                className="w-full px-3 py-1.5 border border-stone-300 rounded-lg bg-white text-xs font-semibold"
+              >
+                <option value="recipe_blend">Rezeptur-Blend (Schieber, % oder Ratio)</option>
+                <option value="build_a_box">Build-a-Box (freie Menge, z.B. Kugeln/Toppings)</option>
+                <option value="bespoke">Bespoke Einzelstück (kaum/kein Schieber)</option>
+              </select>
+              {config.archetype === 'bespoke' && (
+                <p className="text-[10px] text-stone-500 mt-1">Rohstoff-Schieber sind optional — Kunden konfigurieren primär über Zusatzfelder (Tab B).</p>
+              )}
+            </div>
             <div>
               <label className="font-mono font-bold text-stone-700 block mb-1">Schieber-Modus</label>
               <select
@@ -192,6 +209,7 @@ export const DynamicCanvasBuilder: React.FC<DynamicCanvasBuilderProps> = ({ prod
               >
                 <option value="percentage_100">100% Summen-Sperre (Linked Ratios)</option>
                 <option value="free_quantity">Freie Mengeneinheiten (z.B. Stück/Gramm)</option>
+                <option value="ratio">Freies Verhältnis (z.B. Botanicals-Ratio)</option>
               </select>
             </div>
 
@@ -309,8 +327,82 @@ export const DynamicCanvasBuilder: React.FC<DynamicCanvasBuilderProps> = ({ prod
                     </div>
                   </div>
                 </div>
+
+                {/* Inventory & Cost row */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-stone-100 text-xs">
+                  <div>
+                    <label className="font-mono text-stone-600 block mb-1 font-bold flex items-center gap-1">
+                      <Package className="w-3 h-3 text-atelier-terracotta" /> Lagerbestand ({comp.unitText || config.targetUnit})
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={comp.stockQuantity ?? ''}
+                      placeholder="unbegrenzt"
+                      onChange={(e) => handleUpdateComponent(comp.id, { stockQuantity: e.target.value === '' ? undefined : parseInt(e.target.value, 10) || 0 })}
+                      className="w-full px-3 py-1.5 border border-stone-300 rounded-lg font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-mono text-stone-600 block mb-1 font-bold">Rohstoffkosten / Einheit ({currentProducer.currency})</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={comp.costPerUnit ?? ''}
+                      placeholder="0.00"
+                      onChange={(e) => handleUpdateComponent(comp.id, { costPerUnit: parseFloat(e.target.value) || 0 })}
+                      className="w-full px-3 py-1.5 border border-stone-300 rounded-lg font-mono text-xs"
+                    />
+                  </div>
+                  <div className="flex items-end">
+                    <label className="flex items-center gap-2 cursor-pointer pb-2">
+                      <input
+                        type="checkbox"
+                        checked={comp.inStock}
+                        onChange={(e) => handleUpdateComponent(comp.id, { inStock: e.target.checked })}
+                        className="rounded border-stone-300 text-stone-900 w-4 h-4"
+                      />
+                      <span className="text-xs font-bold text-stone-800">Verfügbar / lieferbar</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Allergen declaration row (LMIV / LIV) */}
+                <div className="pt-2 border-t border-stone-100">
+                  <label className="font-mono text-stone-600 block mb-1.5 font-bold flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3 text-atelier-terracotta" /> Allergene dieser Zutat (Pflichtangabe)
+                  </label>
+                  <div className="flex flex-wrap gap-1.5">
+                    {ALL_ALLERGEN_CODES.map(code => {
+                      const active = (comp.allergens || []).includes(code);
+                      return (
+                        <button
+                          key={code}
+                          type="button"
+                          onClick={() => {
+                            const current = comp.allergens || [];
+                            const next = active ? current.filter(a => a !== code) : [...current, code];
+                            handleUpdateComponent(comp.id, { allergens: next });
+                          }}
+                          className={`px-2 py-1 rounded text-[10px] font-medium border transition-all ${
+                            active ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-600 border-stone-200 hover:border-stone-400'
+                          }`}
+                        >
+                          {ALLERGEN_LABELS[code]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
             ))}
+
+            {config.components.length === 0 && (
+              <div className="p-8 text-center bg-stone-50 rounded-xl border border-dashed border-stone-300 text-xs text-stone-500 font-mono">
+                Keine Rohstoff-Schieber definiert — passend für den Archetyp "Bespoke Einzelstück". Kunden konfigurieren dann ausschliesslich über Zusatzfelder (Tab B).
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1,6 +1,15 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { Producer, Product, Order, CartItem, OrderStatus } from './types';
+import {
+  Producer, Product, Order, CartItem, OrderStatus, Quote, QuoteRequestItem, Invoice,
+  Review, SavedRecipe, CustomerDetails,
+} from './types';
 import { SEED_PRODUCERS, SEED_PRODUCTS, INITIAL_ORDERS } from '../db/seed';
+
+interface BatchCapacityInfo {
+  capacity: number | null; // null = unbegrenzt
+  booked: number;
+  isFull: boolean;
+}
 
 interface AppContextType {
   // Mode & Role Separation
@@ -11,7 +20,11 @@ interface AppContextType {
   producers: Producer[];
   products: Product[];
   orders: Order[];
-  
+  quotes: Quote[];
+  invoices: Invoice[];
+  reviews: Review[];
+  savedRecipes: SavedRecipe[];
+
   // Producer context
   selectedProducerId: string;
   setSelectedProducerId: (id: string) => void;
@@ -27,20 +40,38 @@ interface AppContextType {
   removeFromCart: (itemId: string) => void;
   clearCart: () => void;
   cartTotal: number;
+  cartRequiresQuote: boolean;
 
   // Order management
   createOrderFromCart: (orderData: Partial<Order>) => Order;
   updateOrderStatus: (orderId: string, newStatus: OrderStatus) => void;
   activeOrder: Order | null;
   setActiveOrder: (order: Order | null) => void;
+  getBatchCapacityInfo: (producerId: string) => BatchCapacityInfo;
 
   // Product & Recipe management (Producer portal)
   saveProduct: (product: Product) => void;
   deleteProduct: (productId: string) => void;
 
+  // Quote / Offerte -> Rechnung flow (platform never touches this money)
+  createQuoteRequest: (items: QuoteRequestItem[], customer: CustomerDetails, producer: Producer, customerNote?: string) => Quote;
+  respondToQuote: (quoteId: string, price: number, note?: string) => void;
+  acceptQuote: (quoteId: string) => Invoice;
+  declineQuote: (quoteId: string) => void;
+  markInvoicePaid: (invoiceId: string) => void;
+  activeQuote: Quote | null;
+  setActiveQuote: (quote: Quote | null) => void;
+
+  // Reviews
+  addReview: (review: Omit<Review, 'id' | 'createdAt'>) => void;
+
+  // Saved recipes / Nachbestellen
+  saveRecipe: (recipe: Omit<SavedRecipe, 'id' | 'savedAt'>) => void;
+  removeSavedRecipe: (id: string) => void;
+
   // Customer navigation state
-  customerView: 'discover' | 'producer' | 'customizer' | 'tracking';
-  setCustomerView: (view: 'discover' | 'producer' | 'customizer' | 'tracking') => void;
+  customerView: 'discover' | 'producer' | 'customizer' | 'tracking' | 'requests' | 'recipes';
+  setCustomerView: (view: 'discover' | 'producer' | 'customizer' | 'tracking' | 'requests' | 'recipes') => void;
   activeProduct: Product | null;
   setActiveProduct: (product: Product | null) => void;
 
@@ -57,7 +88,25 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'atelier_mto_state_v2';
+const LOCAL_STORAGE_KEY = 'atelier_mto_state_v3';
+
+function generateLotNumber(producer: Producer): string {
+  const stamp = Math.floor(100000 + Math.random() * 900000);
+  return `LOT-${producer.country}-${stamp}`;
+}
+
+function generateQrReference(invoiceSeq: number): string {
+  // Swiss-QR-Rechnung-style structured reference (27 digits, mod-10 recursive checksum
+  // simplified for prototype purposes — not a certified ISO 20022 QR-IBAN reference).
+  const base = `${Date.now()}${invoiceSeq}`.padStart(26, '0').slice(-26);
+  let carry = 0;
+  const table = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5];
+  for (const ch of base) {
+    carry = table[(carry + parseInt(ch, 10)) % 10];
+  }
+  const checkDigit = (10 - carry) % 10;
+  return `${base}${checkDigit}`.replace(/(\d{5})(?=\d)/g, '$1 ').trim();
+}
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   // Mode: customer vs producer
@@ -79,6 +128,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return saved ? JSON.parse(saved) : INITIAL_ORDERS;
   });
 
+  const [quotes, setQuotes] = useState<Quote[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_quotes`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [invoices, setInvoices] = useState<Invoice[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_invoices`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [reviews, setReviews] = useState<Review[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_reviews`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  const [savedRecipes, setSavedRecipes] = useState<SavedRecipe[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_saved_recipes`);
+    return saved ? JSON.parse(saved) : [];
+  });
+
   // Selected Producer for Portal
   const [selectedProducerId, setSelectedProducerId] = useState<string>('prod-maelstrom');
 
@@ -89,9 +158,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   });
 
   // Navigation & Modals
-  const [customerView, setCustomerView] = useState<'discover' | 'producer' | 'customizer' | 'tracking'>('discover');
+  const [customerView, setCustomerView] = useState<AppContextType['customerView']>('discover');
   const [activeProduct, setActiveProduct] = useState<Product | null>(products[0] || null);
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+  const [activeQuote, setActiveQuote] = useState<Quote | null>(null);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   const [printSlipOrder, setPrintSlipOrder] = useState<Order | null>(null);
@@ -109,6 +179,22 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY}_orders`, JSON.stringify(orders));
   }, [orders]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY}_quotes`, JSON.stringify(quotes));
+  }, [quotes]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY}_invoices`, JSON.stringify(invoices));
+  }, [invoices]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY}_reviews`, JSON.stringify(reviews));
+  }, [reviews]);
+
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY}_saved_recipes`, JSON.stringify(savedRecipes));
+  }, [savedRecipes]);
 
   useEffect(() => {
     localStorage.setItem(`${LOCAL_STORAGE_KEY}_cart`, JSON.stringify(cart));
@@ -152,6 +238,38 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   const cartTotal = cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
+  const cartRequiresQuote = cart.some(item => item.product.transactionMode === 'quote_request');
+
+  // Deduct component stock when an order is placed (Made-to-Order recipe items only)
+  const deductComponentStock = (items: CartItem[]) => {
+    const usageByProduct = new Map<string, Map<string, number>>();
+    items.forEach(ci => {
+      if (!ci.recipe) return;
+      const compUsage = usageByProduct.get(ci.product.id) || new Map<string, number>();
+      ci.recipe.forEach(r => {
+        compUsage.set(r.componentId, (compUsage.get(r.componentId) || 0) + r.grams * ci.quantity);
+      });
+      usageByProduct.set(ci.product.id, compUsage);
+    });
+    if (usageByProduct.size === 0) return;
+
+    setProducts(prev => prev.map(p => {
+      const usage = usageByProduct.get(p.id);
+      if (!usage || !p.config) return p;
+      return {
+        ...p,
+        config: {
+          ...p.config,
+          components: p.config.components.map(c => {
+            const used = usage.get(c.id);
+            if (used === undefined || c.stockQuantity === undefined) return c;
+            const remaining = Math.max(0, c.stockQuantity - used);
+            return { ...c, stockQuantity: remaining, inStock: remaining > 0 ? c.inStock : false };
+          }),
+        },
+      };
+    }));
+  };
 
   // Order Actions
   const createOrderFromCart = (orderData: Partial<Order>): Order => {
@@ -187,6 +305,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customFieldValues: ci.customFieldValues,
         customLabel: ci.customLabel,
         renderedLabelSvg: ci.renderedLabelSvg,
+        lotNumber: generateLotNumber(producer),
+        allergens: ci.product.allergens,
       })),
       status: 'paid',
       currency: producer.currency,
@@ -202,6 +322,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       ...orderData,
     };
 
+    deductComponentStock(cart);
     setOrders(prev => [newOrder, ...prev]);
     clearCart();
     setActiveOrder(newOrder);
@@ -214,6 +335,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     if (activeOrder && activeOrder.id === orderId) {
       setActiveOrder(prev => prev ? { ...prev, status: newStatus } : null);
     }
+  };
+
+  const getBatchCapacityInfo = (producerId: string): BatchCapacityInfo => {
+    const producer = producers.find(p => p.id === producerId);
+    const capacity = producer?.capacityPerBatch ?? null;
+    if (capacity === null) return { capacity: null, booked: 0, isFull: false };
+    const booked = orders.filter(o => o.producerId === producerId && (o.status === 'paid' || o.status === 'in_production')).length;
+    return { capacity, booked, isFull: booked >= capacity };
   };
 
   // Product CRUD
@@ -233,6 +362,84 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProducts(prev => prev.filter(p => p.id !== productId));
   };
 
+  // Quote / Offerte -> Rechnung flow. The platform only stores the negotiation +
+  // invoice reference — money always moves directly between customer and producer.
+  const createQuoteRequest = (items: QuoteRequestItem[], customer: CustomerDetails, producer: Producer, customerNote?: string): Quote => {
+    const newQuote: Quote = {
+      id: `quote-${Date.now()}`,
+      quoteNumber: `OFF-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      producerId: producer.id,
+      producerName: producer.name,
+      currency: producer.currency,
+      customer,
+      items,
+      customerNote,
+      status: 'requested',
+      createdAt: new Date().toISOString(),
+    };
+    setQuotes(prev => [newQuote, ...prev]);
+    setActiveQuote(newQuote);
+    return newQuote;
+  };
+
+  const respondToQuote = (quoteId: string, price: number, note?: string) => {
+    setQuotes(prev => prev.map(q => q.id === quoteId
+      ? { ...q, status: 'quoted', quotedPrice: price, quotedNote: note, respondedAt: new Date().toISOString() }
+      : q));
+  };
+
+  const declineQuote = (quoteId: string) => {
+    setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status: 'declined' } : q));
+  };
+
+  const acceptQuote = (quoteId: string): Invoice => {
+    const quote = quotes.find(q => q.id === quoteId);
+    setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status: 'invoiced' } : q));
+
+    const seq = invoices.length + 1;
+    const newInvoice: Invoice = {
+      id: `inv-${Date.now()}`,
+      invoiceNumber: `RE-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      quoteId,
+      producerId: quote?.producerId || currentProducer.id,
+      amount: quote?.quotedPrice || 0,
+      currency: quote?.currency || currentProducer.currency,
+      dueDate: new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0],
+      qrReference: generateQrReference(seq),
+      status: 'open',
+      createdAt: new Date().toISOString(),
+    };
+    setInvoices(prev => [newInvoice, ...prev]);
+    if (activeQuote && activeQuote.id === quoteId) {
+      setActiveQuote(prev => prev ? { ...prev, status: 'invoiced' } : null);
+    }
+    return newInvoice;
+  };
+
+  const markInvoicePaid = (invoiceId: string) => {
+    setInvoices(prev => prev.map(inv => inv.id === invoiceId ? { ...inv, status: 'paid', paidAt: new Date().toISOString() } : inv));
+    const invoice = invoices.find(i => i.id === invoiceId);
+    if (invoice) {
+      setQuotes(prev => prev.map(q => q.id === invoice.quoteId ? { ...q, status: 'paid' } : q));
+    }
+  };
+
+  // Reviews
+  const addReview = (review: Omit<Review, 'id' | 'createdAt'>) => {
+    const newReview: Review = { ...review, id: `rev-${Date.now()}`, createdAt: new Date().toISOString() };
+    setReviews(prev => [newReview, ...prev]);
+  };
+
+  // Saved Recipes / Nachbestellen
+  const saveRecipe = (recipe: Omit<SavedRecipe, 'id' | 'savedAt'>) => {
+    const newRecipe: SavedRecipe = { ...recipe, id: `saved-${Date.now()}`, savedAt: new Date().toISOString() };
+    setSavedRecipes(prev => [newRecipe, ...prev]);
+  };
+
+  const removeSavedRecipe = (id: string) => {
+    setSavedRecipes(prev => prev.filter(r => r.id !== id));
+  };
+
   return (
     <AppContext.Provider
       value={{
@@ -241,6 +448,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         producers,
         products,
         orders,
+        quotes,
+        invoices,
+        reviews,
+        savedRecipes,
         selectedProducerId,
         setSelectedProducerId,
         currentProducer,
@@ -251,12 +462,24 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         removeFromCart,
         clearCart,
         cartTotal,
+        cartRequiresQuote,
         createOrderFromCart,
         updateOrderStatus,
         activeOrder,
         setActiveOrder,
+        getBatchCapacityInfo,
         saveProduct,
         deleteProduct,
+        createQuoteRequest,
+        respondToQuote,
+        acceptQuote,
+        declineQuote,
+        markInvoicePaid,
+        activeQuote,
+        setActiveQuote,
+        addReview,
+        saveRecipe,
+        removeSavedRecipe,
         customerView,
         setCustomerView,
         activeProduct,

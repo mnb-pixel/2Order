@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
 import { CraftCategory, DACHCountry, CurrencyCode } from '../../lib/types';
-import { X, Building2, Sparkles, Clock, ShieldCheck, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { CATEGORY_META, CATEGORY_LIST } from '../../lib/categoryPresets';
+import { X, Building2, ArrowRight } from 'lucide-react';
 
 export const ProducerOnboardingModal: React.FC = () => {
   const { isOnboardingOpen, setIsOnboardingOpen, createProducer, setMode } = useApp();
@@ -17,7 +18,7 @@ export const ProducerOnboardingModal: React.FC = () => {
   const [leadTimeSchedule, setLeadTimeSchedule] = useState('Röstung dienstags, Versand mittwochs');
   const [batchScheduleNotice, setBatchScheduleNotice] = useState('Nächste Charge: Dienstag 08:00');
   const [contactEmail, setContactEmail] = useState('info@atelier-manufaktur.ch');
-  const [heroImage, setHeroImage] = useState('https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=1200&q=80');
+  const [heroImage] = useState('https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=1200&q=80');
 
   if (!isOnboardingOpen) return null;
 
@@ -100,15 +101,11 @@ export const ProducerOnboardingModal: React.FC = () => {
                   onChange={(e) => setCategory(e.target.value as CraftCategory)}
                   className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs bg-white"
                 >
-                  <option value="coffee">Kaffeerösterei (Specialty Coffee)</option>
-                  <option value="beer">Brauerei (Craft Beer / Mikrobrauerei)</option>
-                  <option value="chocolate">Chocolatier (Bean-to-Bar)</option>
-                  <option value="ice_cream">Eismanufaktur / Gelato</option>
-                  <option value="spirits">Destillerie / Gin / Whisky</option>
-                  <option value="bakery">Bäckerei / Konditorei</option>
-                  <option value="tea">Tee- & Kräutermanufaktur</option>
-                  <option value="deli">Feinkost / Manufaktur</option>
+                  {CATEGORY_LIST.map(id => (
+                    <option key={id} value={id}>{CATEGORY_META[id].label}</option>
+                  ))}
                 </select>
+                <p className="text-[10px] text-stone-500 mt-1">{CATEGORY_META[category].exampleComponents}</p>
               </div>
 
               <div>

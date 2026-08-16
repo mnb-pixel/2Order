@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
-import { ShieldCheck, CreditCard, Clock, Building, CheckCircle2, ArrowUpRight } from 'lucide-react';
+import { ShieldCheck, CreditCard, Clock, CheckCircle2, Kanban } from 'lucide-react';
 
 export const MerchantSettings: React.FC = () => {
-  const { currentProducer } = useApp();
+  const { currentProducer, updateProducer, getBatchCapacityInfo } = useApp();
+  const [capacityDraft, setCapacityDraft] = useState<string>(currentProducer.capacityPerBatch?.toString() || '');
+  const capacityInfo = getBatchCapacityInfo(currentProducer.id);
 
   return (
     <div className="space-y-6">
@@ -79,6 +81,40 @@ export const MerchantSettings: React.FC = () => {
               className="w-full px-3 py-2 border border-stone-300 rounded-lg font-medium text-xs"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Batch Capacity Limit */}
+      <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-swiss space-y-4">
+        <div className="flex items-center gap-2 border-b border-stone-200 pb-3">
+          <Kanban className="w-4 h-4 text-stone-900" />
+          <h3 className="text-xs uppercase font-mono font-bold text-stone-800 tracking-wider">
+            KAPAZITÄTSGRENZE PRO FERTIGUNGSCHARGE
+          </h3>
+        </div>
+
+        <p className="text-xs text-stone-600 leading-relaxed">
+          Verhindert Überbuchung: Sobald diese Anzahl offener Made-to-Order Aufträge erreicht ist, sehen Kunden im Checkout einen Hinweis, dass die nächste Charge voll ist.
+        </p>
+
+        <div className="flex items-end gap-3 text-xs">
+          <div>
+            <label className="font-mono text-stone-600 block mb-1 font-bold">Max. Aufträge / Charge</label>
+            <input
+              type="number"
+              min="0"
+              placeholder="unbegrenzt"
+              value={capacityDraft}
+              onChange={(e) => setCapacityDraft(e.target.value)}
+              onBlur={() => updateProducer(currentProducer.id, { capacityPerBatch: capacityDraft === '' ? undefined : parseInt(capacityDraft, 10) || 0 })}
+              className="w-32 px-3 py-2 border border-stone-300 rounded-lg font-mono font-bold text-xs"
+            />
+          </div>
+          {capacityInfo.capacity !== null && (
+            <span className={`text-xs font-mono font-bold px-2.5 py-1.5 rounded-lg ${capacityInfo.isFull ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'}`}>
+              Aktuell {capacityInfo.booked}/{capacityInfo.capacity} belegt
+            </span>
+          )}
         </div>
       </div>
 

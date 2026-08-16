@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
 import { CraftCategory, Producer, Product } from '../../lib/types';
-import { Sparkles, ArrowRight, Sliders, MapPin, Clock, ShieldCheck, Flame, Wine, Coffee } from 'lucide-react';
+import { CATEGORY_META, CATEGORY_LIST } from '../../lib/categoryPresets';
+import { ALLERGEN_LABELS } from '../../lib/allergens';
+import { Sparkles, ArrowRight, Sliders, MapPin, Clock, ShieldCheck, AlertTriangle } from 'lucide-react';
 
-const CATEGORY_TABS: Array<{ id: CraftCategory | 'all'; label: string; icon: any }> = [
-  { id: 'all', label: 'Alle Ateliers', icon: Sparkles },
-  { id: 'coffee', label: 'Röstereien', icon: Coffee },
-  { id: 'beer', label: 'Brauereien', icon: Wine },
-  { id: 'chocolate', label: 'Chocolatiers', icon: Flame },
+const CATEGORY_TABS: Array<{ id: CraftCategory | 'all'; label: string }> = [
+  { id: 'all', label: 'Alle Ateliers' },
+  ...CATEGORY_LIST.map(id => ({ id, label: CATEGORY_META[id].label })),
 ];
 
 export const DiscoverFeed: React.FC = () => {
@@ -68,7 +68,6 @@ export const DiscoverFeed: React.FC = () => {
       {/* Category Pills */}
       <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
         {CATEGORY_TABS.map(tab => {
-          const Icon = tab.icon;
           const isSelected = selectedCategory === tab.id;
           return (
             <button
@@ -80,7 +79,7 @@ export const DiscoverFeed: React.FC = () => {
                   : 'bg-stone-100 text-stone-700 hover:bg-stone-200/80'
               }`}
             >
-              <Icon className="w-3.5 h-3.5" />
+              {tab.id === 'all' && <Sparkles className="w-3.5 h-3.5" />}
               {tab.label}
             </button>
           );
@@ -129,6 +128,12 @@ export const DiscoverFeed: React.FC = () => {
                     <p className="text-xs text-stone-600 line-clamp-2 leading-relaxed">
                       {product.subtitle}
                     </p>
+                    {product.allergens && product.allergens.length > 0 && (
+                      <div className="flex items-start gap-1 text-[10px] text-stone-500 pt-0.5">
+                        <AlertTriangle className="w-3 h-3 text-atelier-terracotta shrink-0 mt-0.5" />
+                        <span>{product.allergens.map(a => ALLERGEN_LABELS[a]).join(', ')}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

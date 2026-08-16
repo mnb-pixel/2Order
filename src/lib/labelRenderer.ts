@@ -1,4 +1,6 @@
-import { CustomLabelData, RecipeItem, CraftCategory } from './types';
+import QRCode from 'qrcode';
+import { CustomLabelData, RecipeItem, CraftCategory, AllergenCode } from './types';
+import { ALLERGEN_LABELS } from './allergens';
 
 export interface LabelRenderOptions {
   category: CraftCategory;
@@ -8,10 +10,36 @@ export interface LabelRenderOptions {
   selections?: Record<string, string>;
   productTitle: string;
   weightText: string;
+  allergens?: AllergenCode[];
+  traceabilityUrl?: string; // if provided, a scannable QR is embedded encoding a plain-text batch/lot summary
+}
+
+// Standalone scannable QR snippet for traceability display outside the main label
+// (e.g. OrderTracker / KDS print slip once a real lot number exists). The QR payload
+// is a plain-text batch summary — this app has no client-side router to resolve a
+// public URL against, so the code is honestly scoped to "scan to read", not "scan to browse".
+export function generateTraceabilityQrSvg(payloadText: string, sizePx: number = 140): string {
+  const inner = renderQrModulesSvg(payloadText, 4, 4, sizePx - 8);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${sizePx} ${sizePx}" width="${sizePx}" height="${sizePx}">${inner}</svg>`;
+}
+
+function renderQrModulesSvg(text: string, x: number, y: number, boxSize: number): string {
+  const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
+  const size = qr.modules.size;
+  const cell = boxSize / size;
+  let rects = '';
+  for (let row = 0; row < size; row++) {
+    for (let col = 0; col < size; col++) {
+      if (qr.modules.get(col, row)) {
+        rects += `<rect x="${(x + col * cell).toFixed(2)}" y="${(y + row * cell).toFixed(2)}" width="${(cell + 0.3).toFixed(2)}" height="${(cell + 0.3).toFixed(2)}" fill="#111111" />`;
+      }
+    }
+  }
+  return `<rect x="${x - 4}" y="${y - 4}" width="${boxSize + 8}" height="${boxSize + 8}" fill="#FFFFFF" stroke="#E5E5DF" stroke-width="1" />${rects}`;
 }
 
 export function generateLabelSvg(options: LabelRenderOptions): string {
-  const { category, producerName, customLabel, recipe, selections, productTitle, weightText } = options;
+  const { producerName, customLabel, recipe, selections, productTitle, weightText, allergens, traceabilityUrl } = options;
   const { headline, subtitle, dedication, fontStyle, batchNumber, roastOrBrewDate } = customLabel;
 
   // Font family mapping
@@ -30,9 +58,15 @@ export function generateLabelSvg(options: LabelRenderOptions): string {
     ? recipe.map(r => `${r.ratio}% ${r.componentName} (${r.grams}g)`).join(' · ')
     : '';
 
-  const selectionText = selections 
+  const selectionText = selections
     ? Object.entries(selections).map(([k, v]) => `${k.toUpperCase()}: ${v}`).join(' | ')
     : '';
+
+  const allergenText = allergens && allergens.length > 0
+    ? `ENTHÄLT: ${allergens.map(a => ALLERGEN_LABELS[a]).join(', ')}`
+    : 'Keine deklarationspflichtigen Allergene bekannt';
+
+  const qrBlock = traceabilityUrl ? renderQrModulesSvg(traceabilityUrl, 655, 320, 90) : '';
 
   // Return crisp, high-res scalable SVG string
   return `
@@ -53,7 +87,7 @@ export function generateLabelSvg(options: LabelRenderOptions): string {
 
       <!-- Top Header Bar -->
       <line x1="25" y1="85" x2="775" y2="85" stroke="#111111" stroke-width="1.5" />
-      
+
       <!-- Producer Logo & Category Seal -->
       <text x="45" y="60" font-size="14" font-weight="700" fill="#111111" letter-spacing="0.18em" font-family="'Inter', sans-serif">
         ✦ ${producerName.toUpperCase()}
@@ -88,7 +122,7 @@ export function generateLabelSvg(options: LabelRenderOptions): string {
           SPEZIFIKATION & REZEPTUR
         </text>
         <line x1="0" y1="10" x2="710" y2="10" stroke="#E5E5DF" stroke-width="1" />
-        
+
         <!-- Recipe pills or segments -->
         <text x="0" y="32" font-size="12.5" font-weight="500" fill="#222222" font-family="'JetBrains Mono', monospace">
           ${escapeXml(recipeBreakout || selectionText || 'Handgefertigt nach Auftrag')}
@@ -99,14 +133,19 @@ export function generateLabelSvg(options: LabelRenderOptions): string {
             ${escapeXml(selectionText)}
           </text>
         ` : ''}
+
+        <!-- Allergen declaration (LMIV / LIV Pflichtangabe) -->
+        <text x="0" y="76" font-size="10.5" font-weight="700" fill="#9C4A2F" font-family="'Inter', sans-serif">
+          ${escapeXml(allergenText)}
+        </text>
       </g>
 
       <!-- Bottom Meta Section -->
       <line x1="25" y1="415" x2="775" y2="415" stroke="#111111" stroke-width="1.5" />
-      
+
       <!-- Batch ID -->
       <g transform="translate(45, 448)">
-        <text x="0" y="0" font-size="10" font-weight="600" fill="#888888" letter-spacing="0.1em" font-family="'Inter', sans-serif">BATCH / SERIE</text>
+        <text x="0" y="0" font-size="10" font-weight="600" fill="#888888" letter-spacing="0.1em" font-family="'Inter', sans-serif">BATCH / LOT</text>
         <text x="0" y="15" font-size="13" font-weight="700" fill="#111111" font-family="'JetBrains Mono', monospace">${escapeXml(batchNumber || 'CH-MTO-001')}</text>
       </g>
 
@@ -123,12 +162,20 @@ export function generateLabelSvg(options: LabelRenderOptions): string {
       </g>
 
       <!-- Swiss Origin Stamp -->
-      <g transform="translate(640, 436)">
-        <rect x="0" y="0" width="105" height="32" fill="none" stroke="#111111" stroke-width="1" rx="2" />
-        <text x="52" y="20" font-size="10.5" font-weight="700" fill="#111111" text-anchor="middle" letter-spacing="0.12em" font-family="'Inter', sans-serif">
+      <g transform="translate(${traceabilityUrl ? 555 : 640}, 436)">
+        <rect x="0" y="0" width="${traceabilityUrl ? 90 : 105}" height="32" fill="none" stroke="#111111" stroke-width="1" rx="2" />
+        <text x="${traceabilityUrl ? 45 : 52}" y="20" font-size="${traceabilityUrl ? 9.5 : 10.5}" font-weight="700" fill="#111111" text-anchor="middle" letter-spacing="0.1em" font-family="'Inter', sans-serif">
           + SWISS CRAFT
         </text>
       </g>
+
+      ${qrBlock ? `
+      <!-- Scannable Herkunfts-/Chargen-QR-Code -->
+      <g>
+        ${qrBlock}
+        <text x="700" y="422" font-size="8" fill="#888888" text-anchor="middle" font-family="'Inter', sans-serif">HERKUNFT SCANNEN</text>
+      </g>
+      ` : ''}
     </svg>
   `;
 }

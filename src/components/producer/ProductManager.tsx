@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
-import { Product, CustomizationConfig } from '../../lib/types';
+import { Product, ShippingRestriction, TransactionMode } from '../../lib/types';
 import { DynamicCanvasBuilder } from './DynamicCanvasBuilder';
-import { Plus, Trash2, Save, Sliders, Package, Check, Sparkles, AlertCircle } from 'lucide-react';
+import { CATEGORY_META } from '../../lib/categoryPresets';
+import { ALL_ALLERGEN_CODES, ALLERGEN_LABELS } from '../../lib/allergens';
+import { Plus, Trash2, Save, Sliders, Package } from 'lucide-react';
 
 export const ProductManager: React.FC = () => {
   const { products, currentProducer, saveProduct, deleteProduct } = useApp();
@@ -28,12 +30,16 @@ export const ProductManager: React.FC = () => {
 
   const handleCreateNewProduct = (isMto: boolean) => {
     const newId = `prod-${Date.now()}`;
+    const meta = CATEGORY_META[currentProducer.category];
+    const archetype = meta.archetype;
+    const startsWithComponents = archetype !== 'bespoke';
+
     const newProd: Product = {
       id: newId,
       producerId: currentProducer.id,
       title: isMto ? 'Neues Made-to-Order Produkt' : 'Neues Standard-Produkt',
-      subtitle: isMto ? 'Individuell mischbar & personalisierbar' : 'Klassischer Artikel aus dem Sortiment',
-      description: 'Produktbeschreibung der Manufaktur eingeben...',
+      subtitle: isMto ? 'Individuell konfigurierbar & personalisierbar' : 'Klassischer Artikel aus dem Sortiment',
+      description: `Produktbeschreibung der ${meta.label}... (${meta.exampleComponents})`,
       category: currentProducer.category,
       basePrice: isMto ? 24.00 : 18.00,
       unitText: isMto ? '500g Beutel' : '250g Packung',
@@ -42,27 +48,31 @@ export const ProductManager: React.FC = () => {
       stockQuantity: isMto ? undefined : 50,
       isActive: true,
       images: ['https://images.unsplash.com/photo-1559056199-641a0ac8b55e?auto=format&fit=crop&w=800&q=80'],
-      tags: isMto ? ['Made to Order', 'Custom Blend'] : ['Klassiker'],
+      tags: isMto ? ['Made to Order'] : ['Klassiker'],
+      transactionMode: 'instant_checkout',
+      shippingRestriction: meta.shippingRestriction,
+      allergens: [],
       config: isMto ? {
         id: `cfg-${newId}`,
         productId: newId,
-        sliderMode: 'percentage_100',
+        archetype,
+        sliderMode: archetype === 'build_a_box' ? 'free_quantity' : 'percentage_100',
         targetTotal: 100,
-        targetUnit: '%',
+        targetUnit: archetype === 'build_a_box' ? 'Stk.' : '%',
         totalWeightGrams: 500,
-        sliderTitle: 'Rezeptur-Mischung (100% gesperrt)',
-        components: [
-          { id: 'c1', name: 'Komponente 1', origin: 'Origin 1', notes: ['Note 1'], maxRatio: 100, priceMultiplier: 1.0, color: '#A65335', inStock: true, unitText: '%' },
-          { id: 'c2', name: 'Komponente 2', origin: 'Origin 2', notes: ['Note 2'], maxRatio: 100, priceMultiplier: 1.0, color: '#633A26', inStock: true, unitText: '%' },
-        ],
+        sliderTitle: archetype === 'bespoke' ? 'Keine Rezeptur — nur Zusatzfelder' : 'Rezeptur-Mischung',
+        components: startsWithComponents ? [
+          { id: 'c1', name: 'Komponente 1', origin: 'Origin 1', notes: ['Note 1'], maxRatio: 100, priceMultiplier: 1.0, color: '#A65335', inStock: true, unitText: archetype === 'build_a_box' ? 'Stk.' : '%' },
+          { id: 'c2', name: 'Komponente 2', origin: 'Origin 2', notes: ['Note 2'], maxRatio: 100, priceMultiplier: 1.0, color: '#633A26', inStock: true, unitText: archetype === 'build_a_box' ? 'Stk.' : '%' },
+        ] : [],
         customFields: [],
         labelConfig: {
           allowed: true,
-          templateType: 'coffee_bag',
-          headlinePlaceholder: 'z.B. Julians Morning Roast',
+          templateType: meta.labelTemplateType,
+          headlinePlaceholder: 'z.B. Julians Signature Creation',
           maxHeadlineLength: 28,
           allowDedication: true,
-          dedicationPlaceholder: 'z.B. Frisch geröstet für...',
+          dedicationPlaceholder: 'z.B. Für besondere Anlässe',
           maxDedicationLength: 45,
           fixedBrandStamp: `+ SWISS CRAFT · ${currentProducer.name.toUpperCase()}`,
           availableFonts: [
@@ -262,6 +272,56 @@ export const ProductManager: React.FC = () => {
                   onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                   className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs"
                 />
+              </div>
+
+              <div>
+                <label className="font-mono font-bold text-stone-700 block mb-1">Transaktionsmodus</label>
+                <select
+                  value={formData.transactionMode || 'instant_checkout'}
+                  onChange={(e) => setFormData({ ...formData, transactionMode: e.target.value as TransactionMode })}
+                  className="w-full px-3 py-2 border border-stone-300 rounded-lg bg-white text-xs font-semibold"
+                >
+                  <option value="instant_checkout">Sofortkauf (Direktzahlung)</option>
+                  <option value="quote_request">Nur auf Anfrage (Offerte → Rechnung)</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-mono font-bold text-stone-700 block mb-1">Versandbeschränkung</label>
+                <select
+                  value={formData.shippingRestriction || 'standard'}
+                  onChange={(e) => setFormData({ ...formData, shippingRestriction: e.target.value as ShippingRestriction })}
+                  className="w-full px-3 py-2 border border-stone-300 rounded-lg bg-white text-xs font-semibold"
+                >
+                  <option value="standard">Standardversand möglich</option>
+                  <option value="cold_chain">Nur Kühlversand</option>
+                  <option value="pickup_only">Nur Abholung vor Ort</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="font-mono font-bold text-stone-700 block mb-1">Fixe Produkt-Allergene</label>
+                <div className="flex flex-wrap gap-1 pt-1">
+                  {ALL_ALLERGEN_CODES.map(code => {
+                    const active = (formData.allergens || []).includes(code);
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => {
+                          const current = formData.allergens || [];
+                          const next = active ? current.filter(a => a !== code) : [...current, code];
+                          setFormData({ ...formData, allergens: next });
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[9px] font-medium border transition-all ${
+                          active ? 'bg-stone-900 text-white border-stone-900' : 'bg-white text-stone-600 border-stone-200 hover:border-stone-400'
+                        }`}
+                      >
+                        {ALLERGEN_LABELS[code]}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             </div>
           </div>

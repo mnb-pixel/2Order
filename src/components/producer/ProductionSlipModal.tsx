@@ -1,6 +1,8 @@
 import React from 'react';
 import { useApp } from '../../lib/store';
-import { X, Printer, CheckCircle, ShieldCheck } from 'lucide-react';
+import { X, Printer, AlertTriangle } from 'lucide-react';
+import { generateTraceabilityQrSvg } from '../../lib/labelRenderer';
+import { ALLERGEN_LABELS } from '../../lib/allergens';
 
 export const ProductionSlipModal: React.FC = () => {
   const { printSlipOrder, setPrintSlipOrder, currentProducer } = useApp();
@@ -139,16 +141,36 @@ export const ProductionSlipModal: React.FC = () => {
                 )}
 
                 {/* Selections & Variations */}
-                {item.selections && (
+                {item.customFieldValues && (
                   <div className="flex flex-wrap gap-2 text-xs font-mono bg-stone-50 p-2.5 rounded border border-stone-200">
                     <span className="font-bold text-stone-700">Verarbeitung:</span>
-                    {Object.entries(item.selections).map(([k, v]) => (
+                    {Object.entries(item.customFieldValues).map(([k, v]) => (
                       <span key={k} className="bg-white px-2 py-0.5 rounded border border-stone-200 text-stone-800 uppercase text-[10px]">
-                        {k}: {v}
+                        {k}: {String(v)}
                       </span>
                     ))}
                   </div>
                 )}
+
+                {/* Allergen declaration + Lot Traceability QR for the workshop file copy */}
+                <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <div className="flex items-start gap-2 text-xs">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold text-stone-800 block">Allergene (LMIV/LIV Pflichtangabe)</span>
+                      <span className="text-stone-600">
+                        {item.allergens && item.allergens.length > 0 ? item.allergens.map(a => ALLERGEN_LABELS[a]).join(', ') : 'Keine bekannt'}
+                      </span>
+                      {item.lotNumber && <span className="block font-mono text-[10px] text-stone-500 mt-1">Lot: {item.lotNumber}</span>}
+                    </div>
+                  </div>
+                  {item.lotNumber && (
+                    <div
+                      className="bg-white p-1 rounded border border-stone-300 shrink-0"
+                      dangerouslySetInnerHTML={{ __html: generateTraceabilityQrSvg(`ATELIER Charge ${item.lotNumber} · ${printSlipOrder.producerName} · ${item.productTitle}`, 56) }}
+                    />
+                  )}
+                </div>
 
                 {/* Rendered Label Vector ready for application */}
                 {item.renderedLabelSvg && (

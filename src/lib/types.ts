@@ -1,6 +1,13 @@
-export type CraftCategory = 'coffee' | 'beer' | 'chocolate' | 'spirits' | 'ice_cream' | 'deli' | 'tea' | 'bakery';
+export type CraftCategory =
+  | 'coffee' | 'beer' | 'chocolate' | 'spirits' | 'ice_cream' | 'deli' | 'tea' | 'bakery'
+  | 'cheese' | 'jam' | 'honey' | 'ferments' | 'pasta' | 'charcuterie' | 'nut_butter' | 'sauces';
 export type DACHCountry = 'CH' | 'DE' | 'AT';
 export type CurrencyCode = 'CHF' | 'EUR';
+
+// MARK: - Allergens (EU/CH LMIV / LIV — 14 declarable allergens)
+export type AllergenCode =
+  | 'gluten' | 'crustaceans' | 'eggs' | 'fish' | 'peanuts' | 'soy' | 'milk' | 'nuts'
+  | 'celery' | 'mustard' | 'sesame' | 'sulfites' | 'lupin' | 'molluscs';
 
 // MARK: - Producer (Gewerbe)
 export interface Producer {
@@ -21,6 +28,7 @@ export interface Producer {
   batchScheduleNotice: string;
   establishedYear: number;
   contactEmail: string;
+  capacityPerBatch?: number; // max Made-to-Order Positionen pro Fertigungscharge
 }
 
 // MARK: - Dynamic Producer-Defined Sliders
@@ -40,6 +48,10 @@ export interface DynamicSliderComponent {
   color: string; // Hex color for visual stack bar
   inStock: boolean;
   unitText?: string; // e.g. "%", "g", "ml", "Kugeln"
+  allergens?: AllergenCode[];
+  stockQuantity?: number; // real inventory count in the component's own unit; undefined = unlimited
+  lowStockThreshold?: number;
+  costPerUnit?: number; // Rohstoffkosten pro Einheit (Basis für COGS)
 }
 
 // MARK: - Dynamic Producer-Defined Fields (Optionen & Eingaben)
@@ -52,6 +64,7 @@ export interface DynamicFieldChoice {
   priceDelta: number; // e.g. +2.50 CHF
   description?: string;
   isDefault?: boolean;
+  allergens?: AllergenCode[];
 }
 
 export interface DynamicCustomField {
@@ -93,20 +106,33 @@ export interface ManufacturerLabelConfig {
   accentColorHex?: string;
 }
 
+// MARK: - Customization Archetype
+// recipe_blend = slider-driven ratio/percentage recipe (coffee, tea, spice, gin)
+// build_a_box  = free-quantity assembly (ice cream scoops+toppings, beer flight, deli platter)
+// bespoke      = single made-to-order item with little/no slider, mostly custom fields (cake, engraving)
+export type CustomizationArchetype = 'recipe_blend' | 'build_a_box' | 'bespoke';
+
 // MARK: - Complete Made-to-Order Customization Configuration
 export interface CustomizationConfig {
   id: string;
   productId: string;
+  archetype?: CustomizationArchetype; // defaults to 'recipe_blend' when omitted for backwards compatibility
   sliderMode: SliderMode; // 'percentage_100', 'free_quantity', 'ratio'
   targetTotal: number; // e.g. 100% or 500g or 6 bottles
   targetUnit: string; // "%", "g", "ml", "Stück"
   totalWeightGrams: number;
   sliderTitle: string; // e.g. "Bohnenmischung (100% gesperrt)"
   sliderDescription?: string;
-  components: DynamicSliderComponent[];
+  components: DynamicSliderComponent[]; // may be empty for 'bespoke' archetype
   customFields: DynamicCustomField[];
   labelConfig: ManufacturerLabelConfig;
 }
+
+// MARK: - Transaction Mode
+// instant_checkout = normal direct purchase (Stripe Connect Direct Charge, producer is merchant of record)
+// quote_request     = customer requests a quote, producer prices it and invoices directly — platform never touches the money
+export type TransactionMode = 'instant_checkout' | 'quote_request';
+export type ShippingRestriction = 'standard' | 'pickup_only' | 'cold_chain';
 
 // MARK: - Products (Separation: Standard vs Custom)
 export interface Product {
@@ -125,6 +151,9 @@ export interface Product {
   images: string[];
   tags: string[];
   config?: CustomizationConfig;
+  transactionMode?: TransactionMode; // defaults to 'instant_checkout' when omitted
+  shippingRestriction?: ShippingRestriction; // defaults to 'standard' when omitted
+  allergens?: AllergenCode[]; // fixed allergens of the product itself (independent of chosen components)
 }
 
 // MARK: - Customer Order Data
@@ -159,6 +188,8 @@ export interface OrderItem {
   customFieldValues?: Record<string, any>;
   customLabel?: CustomLabelData;
   renderedLabelSvg?: string;
+  lotNumber?: string;
+  allergens?: AllergenCode[];
 }
 
 export type OrderStatus = 'paid' | 'in_production' | 'labeling' | 'ready_for_pickup' | 'shipped' | 'completed';
@@ -192,6 +223,10 @@ export interface Order {
   createdAt: string;
   scheduledBatchDate: string;
   trackingNumber?: string;
+  isGift?: boolean;
+  giftMessage?: string;
+  giftRecipient?: CustomerDetails; // ship-to address if different from buyer (customer)
+  quoteId?: string; // set when this order originated from an accepted Quote/Invoice flow
 }
 
 export interface CartItem {
@@ -205,4 +240,69 @@ export interface CartItem {
   customLabel?: CustomLabelData;
   renderedLabelSvg?: string;
   leadTimeInfo: string;
+}
+
+// MARK: - Quote / Offerte -> Invoice/Rechnung flow (platform never touches this money)
+export type QuoteStatus = 'requested' | 'quoted' | 'declined' | 'accepted' | 'invoiced' | 'paid';
+
+export interface QuoteRequestItem {
+  productId: string;
+  productTitle: string;
+  quantity: number;
+  recipe?: RecipeItem[];
+  customFieldValues?: Record<string, any>;
+}
+
+export interface Quote {
+  id: string;
+  quoteNumber: string;
+  producerId: string;
+  producerName: string;
+  currency: CurrencyCode;
+  customer: CustomerDetails;
+  items: QuoteRequestItem[];
+  customerNote?: string;
+  status: QuoteStatus;
+  quotedPrice?: number;
+  quotedNote?: string;
+  createdAt: string;
+  respondedAt?: string;
+}
+
+export interface Invoice {
+  id: string;
+  invoiceNumber: string;
+  quoteId: string;
+  producerId: string;
+  amount: number;
+  currency: CurrencyCode;
+  dueDate: string;
+  qrReference: string; // Swiss-QR-Rechnung-style reference number (structured, not a real ISO 20022 QR-IBAN)
+  status: 'open' | 'paid';
+  createdAt: string;
+  paidAt?: string;
+}
+
+// MARK: - Reviews
+export interface Review {
+  id: string;
+  producerId: string;
+  orderId?: string;
+  customerName: string;
+  rating: number; // 1-5
+  comment: string;
+  createdAt: string;
+}
+
+// MARK: - Saved Recipes ("Nachbestellen" / signature blends)
+export interface SavedRecipe {
+  id: string;
+  producerId: string;
+  producerName: string;
+  productId: string;
+  productTitle: string;
+  recipe?: RecipeItem[];
+  customFieldValues?: Record<string, any>;
+  labelHeadline?: string;
+  savedAt: string;
 }

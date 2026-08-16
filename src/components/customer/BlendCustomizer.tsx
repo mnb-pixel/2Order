@@ -1,12 +1,13 @@
 import React, { useState, useMemo } from 'react';
 import { useApp } from '../../lib/store';
-import { DynamicSliderComponent, RecipeItem, CustomLabelData } from '../../lib/types';
+import { RecipeItem, CustomLabelData } from '../../lib/types';
 import { generateLabelSvg } from '../../lib/labelRenderer';
-import { ArrowLeft, Sparkles, Check, Info, ShoppingBag, Eye, SlidersHorizontal, Layers } from 'lucide-react';
+import { ALLERGEN_LABELS } from '../../lib/allergens';
+import { ArrowLeft, Check, ShoppingBag, Eye, SlidersHorizontal, Layers, AlertTriangle, Bookmark } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export const BlendCustomizer: React.FC = () => {
-  const { activeProduct, currentProducer, setCustomerView, addToCart } = useApp();
+  const { activeProduct, currentProducer, setCustomerView, addToCart, saveRecipe } = useApp();
 
   if (!activeProduct || !activeProduct.config) {
     return (
@@ -27,10 +28,13 @@ export const BlendCustomizer: React.FC = () => {
   const customFields = config.customFields || [];
   const labelConfig = config.labelConfig;
 
+  const hasRecipeStep = components.length > 0;
+
   // Initialize ratios evenly distributed to sum to 100% (or target total)
   const [ratios, setRatios] = useState<Record<string, number>>(() => {
     const initial: Record<string, number> = {};
     const count = components.length;
+    if (count === 0) return initial;
     let remaining = config.targetTotal || 100;
     components.forEach((c, idx) => {
       if (idx === count - 1) {
@@ -63,7 +67,9 @@ export const BlendCustomizer: React.FC = () => {
     roastOrBrewDate: new Date().toLocaleDateString('de-CH'),
   });
 
-  const [activeTab, setActiveTab] = useState<'recipe' | 'fields' | 'label'>('recipe');
+  const [activeTab, setActiveTab] = useState<'recipe' | 'fields' | 'label'>(
+    hasRecipeStep ? 'recipe' : (customFields.length > 0 ? 'fields' : 'label')
+  );
 
   // Multi-Slider 100% Lock Redistribution Algorithm
   const handleRatioChange = (changedId: string, rawNewValue: number) => {
@@ -161,6 +167,22 @@ export const BlendCustomizer: React.FC = () => {
     return Number(price.toFixed(2));
   }, [activeProduct.basePrice, components, ratios, config.targetTotal, customFields, fieldValues]);
 
+  // Aggregate declaration-relevant allergens from fixed product allergens,
+  // the currently selected recipe components, and chosen custom field choices.
+  const activeAllergens = useMemo(() => {
+    const set = new Set<string>();
+    (activeProduct.allergens || []).forEach(a => set.add(a));
+    components.forEach(c => {
+      if ((ratios[c.id] || 0) > 0) (c.allergens || []).forEach(a => set.add(a));
+    });
+    customFields.forEach(f => {
+      const val = fieldValues[f.key];
+      const matched = f.choices?.find(c => c.value === val);
+      (matched?.allergens || []).forEach(a => set.add(a));
+    });
+    return Array.from(set) as (keyof typeof ALLERGEN_LABELS)[];
+  }, [activeProduct.allergens, components, ratios, customFields, fieldValues]);
+
   // Generate real-time SVG for preview
   const renderedSvg = useMemo(() => {
     return generateLabelSvg({
@@ -171,8 +193,10 @@ export const BlendCustomizer: React.FC = () => {
       selections: fieldValues,
       productTitle: activeProduct.title,
       weightText: activeProduct.unitText,
+      allergens: activeAllergens,
+      traceabilityUrl: `ATELIER Charge ${labelData.batchNumber} · ${currentProducer.name} · ${labelData.roastOrBrewDate}`,
     });
-  }, [activeProduct, currentProducer.name, labelData, calculatedRecipe, fieldValues]);
+  }, [activeProduct, currentProducer.name, labelData, calculatedRecipe, fieldValues, activeAllergens]);
 
   const handleAddToCart = () => {
     try {
@@ -247,17 +271,19 @@ export const BlendCustomizer: React.FC = () => {
 
           {/* Stepper Tabs */}
           <div className="flex border-b border-stone-200 text-xs font-mono">
-            <button
-              onClick={() => setActiveTab('recipe')}
-              className={`flex-1 py-3 font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
-                activeTab === 'recipe'
-                  ? 'border-stone-900 text-stone-900 bg-stone-50/50'
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              <SlidersHorizontal className="w-3.5 h-3.5 text-atelier-terracotta" />
-              <span>1. REZEPTUR ({config.targetTotal}{config.targetUnit})</span>
-            </button>
+            {hasRecipeStep && (
+              <button
+                onClick={() => setActiveTab('recipe')}
+                className={`flex-1 py-3 font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
+                  activeTab === 'recipe'
+                    ? 'border-stone-900 text-stone-900 bg-stone-50/50'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5 text-atelier-terracotta" />
+                <span>1. REZEPTUR ({config.targetTotal}{config.targetUnit})</span>
+              </button>
+            )}
 
             {customFields.length > 0 && (
               <button
@@ -325,12 +351,13 @@ export const BlendCustomizer: React.FC = () => {
                 {components.map(comp => {
                   const ratio = ratios[comp.id] || 0;
                   const grams = Math.round((ratio / (config.targetTotal || 100)) * totalWeightGrams);
+                  const isOutOfStock = !comp.inStock || (comp.stockQuantity !== undefined && comp.stockQuantity <= 0);
 
                   return (
                     <div
                       key={comp.id}
                       className={`p-4 rounded-lg border transition-all ${
-                        ratio > 0 ? 'bg-stone-50/80 border-stone-300' : 'bg-white border-stone-200 opacity-60'
+                        isOutOfStock ? 'bg-stone-50 border-stone-200 opacity-50' : ratio > 0 ? 'bg-stone-50/80 border-stone-300' : 'bg-white border-stone-200 opacity-60'
                       }`}
                     >
                       <div className="flex justify-between items-start mb-2">
@@ -341,6 +368,9 @@ export const BlendCustomizer: React.FC = () => {
                               style={{ backgroundColor: comp.color }}
                             />
                             <h4 className="font-semibold text-stone-900 text-sm">{comp.name}</h4>
+                            {isOutOfStock && (
+                              <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 bg-red-100 text-red-700 rounded font-bold">Ausverkauft</span>
+                            )}
                           </div>
                           {comp.origin && (
                             <p className="text-xs text-stone-500">{comp.origin} {comp.process ? `· ${comp.process}` : ''}</p>
@@ -368,9 +398,10 @@ export const BlendCustomizer: React.FC = () => {
                         min="0"
                         max={config.targetTotal || 100}
                         step="5"
-                        value={ratio}
+                        value={isOutOfStock ? 0 : ratio}
+                        disabled={isOutOfStock}
                         onChange={(e) => handleRatioChange(comp.id, parseInt(e.target.value, 10))}
-                        className="w-full"
+                        className="w-full disabled:cursor-not-allowed"
                       />
                     </div>
                   );
@@ -586,6 +617,17 @@ export const BlendCustomizer: React.FC = () => {
                 </div>
               </div>
 
+              {/* Allergen Declaration (LMIV / LIV Pflichtangabe) */}
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex items-start gap-2">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="text-[11px] text-stone-300">
+                  <span className="font-bold text-amber-400 block mb-0.5">Allergenkennzeichnung</span>
+                  {activeAllergens.length > 0
+                    ? activeAllergens.map(a => ALLERGEN_LABELS[a]).join(', ')
+                    : 'Keine deklarationspflichtigen Allergene bei aktueller Auswahl'}
+                </div>
+              </div>
+
               {/* Lead Time Schedule */}
               <div className="text-[11px] text-stone-400 flex items-center gap-2 pt-1 font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-atelier-terracotta shrink-0"></span>
@@ -599,7 +641,27 @@ export const BlendCustomizer: React.FC = () => {
                 className="w-full py-3.5 px-5 bg-white hover:bg-stone-100 text-stone-900 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98]"
               >
                 <ShoppingBag className="w-4 h-4 text-atelier-terracotta" />
-                <span>In den Warenkorb — {currentProducer.currency} {calculatedPrice.toFixed(2)}</span>
+                <span>{activeProduct.transactionMode === 'quote_request' ? 'Für Anfrage vormerken' : 'In den Warenkorb'} — {currentProducer.currency} {calculatedPrice.toFixed(2)}</span>
+              </button>
+
+              {/* Save Recipe for reorder */}
+              <button
+                type="button"
+                onClick={() => {
+                  saveRecipe({
+                    producerId: currentProducer.id,
+                    producerName: currentProducer.name,
+                    productId: activeProduct.id,
+                    productTitle: activeProduct.title,
+                    recipe: calculatedRecipe,
+                    customFieldValues: fieldValues,
+                    labelHeadline: labelData.headline,
+                  });
+                }}
+                className="w-full py-2 px-4 border border-stone-700 hover:border-stone-500 text-stone-300 hover:text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all"
+              >
+                <Bookmark className="w-3.5 h-3.5" />
+                <span>Diesen Blend merken (für Nachbestellung)</span>
               </button>
 
             </div>

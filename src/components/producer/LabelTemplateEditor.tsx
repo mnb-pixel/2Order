@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
 import { generateLabelSvg } from '../../lib/labelRenderer';
-import { Sparkles, Eye, Save, Code, Check } from 'lucide-react';
+import { Save, Check } from 'lucide-react';
 
 export const LabelTemplateEditor: React.FC = () => {
   const { currentProducer } = useApp();
@@ -39,7 +39,7 @@ export const LabelTemplateEditor: React.FC = () => {
             SVG ETIKETTEN-STUDIO & VEKTOR-SLOTS
           </h2>
           <p className="text-xs text-stone-500 mt-1">
-            Konfigurieren Sie die dynamischen Text- und Rezeptur-Platzhalter (`{{custom_title}}`, `{{recipe_breakdown}}`, `{{batch_date}}`) für Ihren Thermotransfer- oder Laserdrucker.
+            Konfigurieren Sie die dynamischen Text- und Rezeptur-Platzhalter (`{'{{custom_title}}'}`, `{'{{recipe_breakdown}}'}`, `{'{{batch_date}}'}`) für Ihren Thermotransfer- oder Laserdrucker.
           </p>
         </div>
 

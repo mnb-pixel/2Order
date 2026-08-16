@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
-import { CheckCircle2, Clock, Package, Truck, ArrowLeft, Sliders, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, Clock, Package, Truck, ArrowLeft, Sliders, ShieldCheck, QrCode, AlertTriangle, Gift, Star } from 'lucide-react';
 import { OrderStatus } from '../../lib/types';
+import { generateTraceabilityQrSvg } from '../../lib/labelRenderer';
+import { ALLERGEN_LABELS } from '../../lib/allergens';
 
 const STATUS_STEPS: Array<{ id: OrderStatus; label: string; description: string; icon: any }> = [
   { id: 'paid', label: 'Bezahlt & Eingeplant', description: 'Rezeptur an Werkstatt übermittelt', icon: CheckCircle2 },
@@ -11,7 +13,10 @@ const STATUS_STEPS: Array<{ id: OrderStatus; label: string; description: string;
 ];
 
 export const OrderTracker: React.FC = () => {
-  const { activeOrder, orders, setCustomerView, setMode } = useApp();
+  const { activeOrder, orders, setCustomerView, setMode, addReview } = useApp();
+  const [reviewRating, setReviewRating] = useState<number>(5);
+  const [reviewComment, setReviewComment] = useState<string>('');
+  const [reviewSubmitted, setReviewSubmitted] = useState<boolean>(false);
 
   const currentOrder = activeOrder || orders[0];
 
@@ -77,6 +82,16 @@ export const OrderTracker: React.FC = () => {
           <div>Geplante Produktion: <span className="text-white">{currentOrder.scheduledBatchDate}</span></div>
           <div>Zahlung: <span className="text-white uppercase">{currentOrder.paymentMethod}</span> (Bezahlt)</div>
         </div>
+
+        {currentOrder.isGift && (
+          <div className="pt-2 border-t border-stone-800 flex items-start gap-2 text-xs text-stone-300">
+            <Gift className="w-4 h-4 text-atelier-terracotta shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold text-white block">Geschenkversand an {currentOrder.giftRecipient?.name}</span>
+              {currentOrder.giftMessage && <span className="italic font-serif">"{currentOrder.giftMessage}"</span>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Production Stepper */}
@@ -195,9 +210,82 @@ export const OrderTracker: React.FC = () => {
                 />
               </div>
             )}
+
+            {/* Allergens + Batch Traceability */}
+            <div className="flex flex-col sm:flex-row gap-3 items-start bg-stone-50 rounded-xl p-3 border border-stone-200">
+              <div className="flex-1 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-bold text-stone-800">
+                  <AlertTriangle className="w-3.5 h-3.5 text-atelier-terracotta" />
+                  <span>Allergenkennzeichnung</span>
+                </div>
+                <p className="text-stone-600">
+                  {item.allergens && item.allergens.length > 0
+                    ? `Enthält: ${item.allergens.map(a => ALLERGEN_LABELS[a]).join(', ')}`
+                    : 'Keine deklarationspflichtigen Allergene bekannt'}
+                </p>
+                {item.lotNumber && (
+                  <p className="font-mono text-[11px] text-stone-500 pt-1">Charge / Lot: <strong className="text-stone-800">{item.lotNumber}</strong></p>
+                )}
+              </div>
+              {item.lotNumber && (
+                <div className="shrink-0 flex flex-col items-center gap-1">
+                  <div
+                    className="bg-white p-1 rounded border border-stone-300"
+                    dangerouslySetInnerHTML={{ __html: generateTraceabilityQrSvg(`ATELIER Charge ${item.lotNumber} · ${currentOrder.producerName} · ${item.productTitle}`, 72) }}
+                  />
+                  <span className="text-[9px] font-mono text-stone-400 flex items-center gap-1"><QrCode className="w-2.5 h-2.5" /> Herkunft</span>
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>
+
+      {/* Review Form (once shipped/completed) */}
+      {(currentOrder.status === 'shipped' || currentOrder.status === 'completed') && (
+        <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-swiss space-y-4">
+          <h2 className="text-xs uppercase tracking-widest font-mono font-bold text-stone-700">
+            WIE WAR IHRE ERFAHRUNG MIT {currentOrder.producerName.toUpperCase()}?
+          </h2>
+          {reviewSubmitted ? (
+            <p className="text-xs text-emerald-700 font-semibold flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4" /> Vielen Dank für Ihre Bewertung!
+            </p>
+          ) : (
+            <div className="space-y-3">
+              <div className="flex gap-1">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button key={star} type="button" onClick={() => setReviewRating(star)}>
+                    <Star className={`w-6 h-6 ${star <= reviewRating ? 'fill-atelier-terracotta text-atelier-terracotta' : 'text-stone-300'}`} />
+                  </button>
+                ))}
+              </div>
+              <textarea
+                rows={2}
+                value={reviewComment}
+                onChange={(e) => setReviewComment(e.target.value)}
+                placeholder="Erzählen Sie anderen Kunden von Ihrer Kreation..."
+                className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs"
+              />
+              <button
+                onClick={() => {
+                  addReview({
+                    producerId: currentOrder.producerId,
+                    orderId: currentOrder.id,
+                    customerName: currentOrder.customer.name,
+                    rating: reviewRating,
+                    comment: reviewComment,
+                  });
+                  setReviewSubmitted(true);
+                }}
+                className="px-5 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-bold"
+              >
+                Bewertung abgeben
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* CTA Button */}
       <div className="text-center pt-2">

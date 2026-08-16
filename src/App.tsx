@@ -5,6 +5,8 @@ import { DiscoverFeed } from './components/customer/DiscoverFeed';
 import { ProducerProfile } from './components/customer/ProducerProfile';
 import { BlendCustomizer } from './components/customer/BlendCustomizer';
 import { OrderTracker } from './components/customer/OrderTracker';
+import { RequestsTracker } from './components/customer/RequestsTracker';
+import { MyRecipesView } from './components/customer/MyRecipesView';
 import { CartDrawer } from './components/customer/CartDrawer';
 import { CheckoutModal } from './components/customer/CheckoutModal';
 import { ProducerDashboard } from './components/producer/ProducerDashboard';
@@ -42,6 +44,8 @@ export const AppContent: React.FC = () => {
               {customerView === 'producer' && <ProducerProfile />}
               {customerView === 'customizer' && <BlendCustomizer />}
               {customerView === 'tracking' && <OrderTracker />}
+              {customerView === 'requests' && <RequestsTracker />}
+              {customerView === 'recipes' && <MyRecipesView />}
             </div>
           </div>
         )}

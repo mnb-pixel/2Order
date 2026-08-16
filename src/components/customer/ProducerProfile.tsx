@@ -1,14 +1,19 @@
 import React from 'react';
 import { useApp } from '../../lib/store';
-import { ArrowLeft, MapPin, Clock, ShieldCheck, Sliders, ShoppingBag, Package } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, ShieldCheck, Sliders, ShoppingBag, Package, Star, AlertTriangle } from 'lucide-react';
 import { Product } from '../../lib/types';
+import { ALLERGEN_LABELS } from '../../lib/allergens';
 
 export const ProducerProfile: React.FC = () => {
-  const { currentProducer, products, setCustomerView, setActiveProduct, addToCart } = useApp();
+  const { currentProducer, products, reviews, setCustomerView, setActiveProduct, addToCart } = useApp();
 
   const producerProducts = products.filter(p => p.producerId === currentProducer.id);
   const customizableProducts = producerProducts.filter(p => p.isCustomizable);
   const standardProducts = producerProducts.filter(p => !p.isCustomizable);
+  const producerReviews = reviews.filter(r => r.producerId === currentProducer.id);
+  const avgRating = producerReviews.length > 0
+    ? producerReviews.reduce((s, r) => s + r.rating, 0) / producerReviews.length
+    : null;
 
   const handleStartCustomizing = (product: Product) => {
     setActiveProduct(product);
@@ -55,6 +60,12 @@ export const ProducerProfile: React.FC = () => {
               <MapPin className="w-3 h-3 text-atelier-terracotta" />
               {currentProducer.city}, {currentProducer.country}
             </span>
+            {avgRating !== null && (
+              <span className="flex items-center gap-1">
+                <Star className="w-3 h-3 text-amber-400 fill-amber-400" />
+                {avgRating.toFixed(1)} ({producerReviews.length} Bewertungen)
+              </span>
+            )}
           </div>
 
           <h1 className="text-2xl sm:text-4xl font-bold tracking-tight text-white">
@@ -121,6 +132,13 @@ export const ProducerProfile: React.FC = () => {
                       </span>
                     ))}
                   </div>
+
+                  {product.allergens && product.allergens.length > 0 && (
+                    <div className="flex items-start gap-1.5 pt-1 text-[10px] text-stone-500">
+                      <AlertTriangle className="w-3 h-3 text-atelier-terracotta shrink-0 mt-0.5" />
+                      <span>Enthält: {product.allergens.map(a => ALLERGEN_LABELS[a]).join(', ')}</span>
+                    </div>
+                  )}
                 </div>
 
                 <button
@@ -182,6 +200,35 @@ export const ProducerProfile: React.FC = () => {
                     <ShoppingBag className="w-4 h-4" />
                   </button>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* BEREICH 3: KUNDENBEWERTUNGEN */}
+      {producerReviews.length > 0 && (
+        <div className="space-y-4 pt-4">
+          <div className="flex items-center justify-between border-b border-stone-200 pb-2">
+            <div className="flex items-center gap-2">
+              <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+              <h2 className="text-xs uppercase tracking-widest font-mono font-bold text-stone-700">
+                3. KUNDENBEWERTUNGEN ({producerReviews.length})
+              </h2>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {producerReviews.map(review => (
+              <div key={review.id} className="bg-white border border-stone-200 rounded-xl p-4 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-stone-900 text-sm">{review.customerName}</span>
+                  <div className="flex gap-0.5">
+                    {[1, 2, 3, 4, 5].map(s => (
+                      <Star key={s} className={`w-3 h-3 ${s <= review.rating ? 'fill-amber-400 text-amber-400' : 'text-stone-200'}`} />
+                    ))}
+                  </div>
+                </div>
+                {review.comment && <p className="text-xs text-stone-600">{review.comment}</p>}
               </div>
             ))}
           </div>

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
 import { OrderStatus, Order } from '../../lib/types';
-import { Printer, Clock, CheckCircle2, ArrowRight, ArrowLeft, Search, Filter, AlertCircle } from 'lucide-react';
+import { Printer, Clock, CheckCircle2, ArrowRight, ArrowLeft, Search } from 'lucide-react';
 
 const COLUMNS: Array<{ id: OrderStatus; label: string; color: string; badgeBg: string }> = [
   { id: 'paid', label: 'Eingang / Bezahlt', color: 'border-amber-500', badgeBg: 'bg-amber-100 text-amber-900' },
@@ -169,10 +169,13 @@ export const ProductionQueueKDS: React.FC = () => {
                             </div>
                           )}
 
-                          {item.selections && (
+                          {item.customFieldValues && (
                             <div className="text-[10px] font-mono text-stone-500">
-                              {Object.entries(item.selections).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                              {Object.entries(item.customFieldValues).map(([k, v]) => `${k}: ${v}`).join(' · ')}
                             </div>
+                          )}
+                          {item.lotNumber && (
+                            <div className="text-[10px] font-mono text-stone-400">Lot: {item.lotNumber}</div>
                           )}
                         </div>
                       ))}

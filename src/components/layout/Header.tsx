@@ -1,9 +1,9 @@
 import React from 'react';
 import { useApp } from '../../lib/store';
-import { ShoppingBag, Sliders, Smartphone, Laptop, Sparkles, RefreshCw } from 'lucide-react';
+import { ShoppingBag, Smartphone, Laptop, FileText, Bookmark } from 'lucide-react';
 
 export const Header: React.FC = () => {
-  const { mode, setMode, cart, setIsCartOpen, customerView, setCustomerView } = useApp();
+  const { mode, setMode, cart, setIsCartOpen, customerView, setCustomerView, quotes, savedRecipes } = useApp();
 
   return (
     <header className="sticky top-0 z-40 bg-[#F9F9F8]/90 backdrop-blur-md border-b border-stone-200">
@@ -35,7 +35,11 @@ export const Header: React.FC = () => {
             <div className="hidden sm:flex items-center gap-1 text-xs font-mono text-stone-400">
               <span>/</span>
               <span className="text-stone-700 capitalize">
-                {customerView === 'producer' ? 'Atelier-Profil' : customerView === 'customizer' ? 'Blend Canvas' : 'Auftragsstatus'}
+                {customerView === 'producer' ? 'Atelier-Profil'
+                  : customerView === 'customizer' ? 'Blend Canvas'
+                  : customerView === 'requests' ? 'Anfragen & Rechnungen'
+                  : customerView === 'recipes' ? 'Meine Blends'
+                  : 'Auftragsstatus'}
               </span>
             </div>
           )}
@@ -69,6 +73,36 @@ export const Header: React.FC = () => {
               <span className="hidden sm:inline">Produzenten-Portal</span>
             </button>
           </div>
+
+          {/* Saved Recipes & Requests (in Customer Mode) */}
+          {mode === 'customer' && (
+            <>
+              <button
+                onClick={() => setCustomerView('recipes')}
+                className="relative p-2.5 bg-stone-100 hover:bg-stone-200 rounded-full transition-colors text-stone-900 hidden sm:inline-flex"
+                title="Meine gemerkten Blends"
+              >
+                <Bookmark className="w-4 h-4" />
+                {savedRecipes.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-stone-900 text-white text-[10px] font-mono font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                    {savedRecipes.length}
+                  </span>
+                )}
+              </button>
+              <button
+                onClick={() => setCustomerView('requests')}
+                className="relative p-2.5 bg-stone-100 hover:bg-stone-200 rounded-full transition-colors text-stone-900 hidden sm:inline-flex"
+                title="Meine Anfragen & Rechnungen"
+              >
+                <FileText className="w-4 h-4" />
+                {quotes.length > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-stone-900 text-white text-[10px] font-mono font-bold w-4 h-4 rounded-full flex items-center justify-center shadow-xs">
+                    {quotes.length}
+                  </span>
+                )}
+              </button>
+            </>
+          )}
 
           {/* Cart Icon (in Customer Mode) */}
           {mode === 'customer' && (
