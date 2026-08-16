@@ -33,6 +33,30 @@ class AtelierStore: ObservableObject {
         hapticSuccess.notificationOccurred(.success)
     }
     
+    // MARK: - Producer Management
+    func createProducer(name: String, category: CraftCategory, city: String, country: DACHCountry, tagline: String, vatNumber: String, leadTimeSchedule: String) -> Producer {
+        let newProd = Producer(
+            id: "prod-\(Date().timeIntervalSince1970)",
+            name: name,
+            tagline: tagline,
+            category: category,
+            country: country,
+            city: city,
+            currency: country == .ch ? "CHF" : "EUR",
+            bio: "Handwerkliche Manufaktur mit Made-to-Order Produktion.",
+            heroImageUrl: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=1000&q=80",
+            vatNumber: vatNumber,
+            leadTimeSchedule: leadTimeSchedule,
+            batchScheduleNotice: "Wöchentliche Frischecharge",
+            establishedYear: Calendar.current.component(.year, from: Date()),
+            contactEmail: "kontakt@\(name.lowercased().replacingOccurrences(of: " ", with: "")).ch"
+        )
+        producers.append(newProd)
+        selectedProducer = newProd
+        triggerSuccessFeedback()
+        return newProd
+    }
+    
     // MARK: - Cart Methods
     func addToCart(_ item: CartItem) {
         cart.append(item)
@@ -86,6 +110,16 @@ class AtelierStore: ObservableObject {
         }
     }
     
+    // MARK: - Product CRUD
+    func saveProduct(_ product: Product) {
+        if let index = products.firstIndex(where: { $0.id == product.id }) {
+            products[index] = product
+        } else {
+            products.append(product)
+        }
+        triggerSuccessFeedback()
+    }
+    
     // MARK: - Seed Data Loader
     private func loadSeedData() {
         let maelstrom = Producer(
@@ -101,7 +135,8 @@ class AtelierStore: ObservableObject {
             vatNumber: "CHE-412.890.123 MWST",
             leadTimeSchedule: "Röstung jeden Dienstag & Donnerstag",
             batchScheduleNotice: "Nächste Röstung: Dienstag 08:00 Uhr",
-            establishedYear: 2021
+            establishedYear: 2021,
+            contactEmail: "roastmaster@maelstrom.ch"
         )
         
         let aarauHops = Producer(
@@ -117,7 +152,8 @@ class AtelierStore: ObservableObject {
             vatNumber: "CHE-298.114.772 MWST",
             leadTimeSchedule: "Abfüllung & Frischeversand wöchentlich freitags",
             batchScheduleNotice: "Frische Zapfung: Freitag",
-            establishedYear: 2019
+            establishedYear: 2019,
+            contactEmail: "brauerei@aarauhops.ch"
         )
         
         let cacaoBasel = Producer(
@@ -133,7 +169,8 @@ class AtelierStore: ObservableObject {
             vatNumber: "CHE-119.553.901 MWST",
             leadTimeSchedule: "Giessen dienstags, Versand mittwochs",
             batchScheduleNotice: "Giesstermin: Dienstag",
-            establishedYear: 2022
+            establishedYear: 2022,
+            contactEmail: "atelier@cacao-basel.ch"
         )
         
         self.producers = [maelstrom, aarauHops, cacaoBasel]
@@ -143,6 +180,7 @@ class AtelierStore: ObservableObject {
         let coffeeConfig = CustomizationConfig(
             id: "cfg-coffee",
             productId: "prod-coffee-custom",
+            sliderTitle: "Bohnenmischung (100% gesperrt)",
             totalWeightGrams: 500,
             components: [
                 BlendComponent(id: "c-ethiopia", name: "Äthiopien Yirgacheffe G1", origin: "2'050m / Washed", process: "Floral & Pfirsich", notes: ["Bergamotte", "Jasmin"], priceMultiplier: 1.15, hexColor: "E0A96D"),
@@ -164,10 +202,17 @@ class AtelierStore: ObservableObject {
                     ]
                 )
             ],
-            maxTitleLength: 28,
-            maxDedicationLength: 45
+            labelConfig: ManufacturerLabelConfig(
+                allowed: true,
+                headlinePlaceholder: "z.B. Julians Morning Fuel",
+                maxHeadlineLength: 28,
+                allowDedication: true,
+                maxDedicationLength: 45,
+                fixedBrandStamp: "+ SWISS CRAFT · MAELSTROM"
+            )
         )
         
+        // 1. Made-to-Order Produkt
         let coffeeCustom = Product(
             id: "prod-coffee-custom",
             producerId: "prod-maelstrom",
@@ -184,6 +229,7 @@ class AtelierStore: ObservableObject {
             config: coffeeConfig
         )
         
+        // 2. Standard Produkt
         let coffeeGeisha = Product(
             id: "prod-coffee-geisha",
             producerId: "prod-maelstrom",
@@ -195,6 +241,7 @@ class AtelierStore: ObservableObject {
             unitText: "250g Box",
             weightGrams: 250,
             isCustomizable: false,
+            stockQuantity: 42,
             imageUrl: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=600&q=80",
             tags: ["Single Origin", "Micro-Lot"],
             config: nil
@@ -203,7 +250,7 @@ class AtelierStore: ObservableObject {
         self.products = [coffeeCustom, coffeeGeisha]
         self.activeProduct = coffeeCustom
         
-        // Seed an initial order
+        // Seed initial order
         let seedOrder = Order(
             id: "seed-1001",
             orderNumber: "ATL-2026-8801",

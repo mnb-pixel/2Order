@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useApp } from '../../lib/store';
-import { BlendComponent, RecipeItem, CustomLabelData } from '../../lib/types';
+import { DynamicSliderComponent, RecipeItem, CustomLabelData } from '../../lib/types';
 import { generateLabelSvg } from '../../lib/labelRenderer';
-import { ArrowLeft, Sparkles, Check, Info, ShoppingBag, Eye, SlidersHorizontal, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Sparkles, Check, Info, ShoppingBag, Eye, SlidersHorizontal, Layers } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 export const BlendCustomizer: React.FC = () => {
@@ -24,17 +24,19 @@ export const BlendCustomizer: React.FC = () => {
 
   const config = activeProduct.config;
   const components = config.components;
+  const customFields = config.customFields || [];
+  const labelConfig = config.labelConfig;
 
-  // Initialize ratios evenly distributed to sum to 100%
+  // Initialize ratios evenly distributed to sum to 100% (or target total)
   const [ratios, setRatios] = useState<Record<string, number>>(() => {
     const initial: Record<string, number> = {};
     const count = components.length;
-    let remaining = 100;
+    let remaining = config.targetTotal || 100;
     components.forEach((c, idx) => {
       if (idx === count - 1) {
         initial[c.id] = remaining;
       } else {
-        const val = Math.floor(100 / count);
+        const val = Math.floor((config.targetTotal || 100) / count);
         initial[c.id] = val;
         remaining -= val;
       }
@@ -42,44 +44,47 @@ export const BlendCustomizer: React.FC = () => {
     return initial;
   });
 
-  // Selected Variant Options (e.g. Mahlgrad)
-  const [selectedOptions, setSelectedOptions] = useState<Record<string, string>>(() => {
-    const initial: Record<string, string> = {};
-    config.options.forEach(opt => {
-      initial[opt.key] = opt.defaultValue;
+  // Dynamic Custom Field Values
+  const [fieldValues, setFieldValues] = useState<Record<string, any>>(() => {
+    const initial: Record<string, any> = {};
+    customFields.forEach(f => {
+      initial[f.key] = f.defaultValue || (f.choices && f.choices[0]?.value) || '';
     });
     return initial;
   });
 
-  // Custom Label State
+  // Custom Label State (bounded by manufacturer labelConfig)
   const [labelData, setLabelData] = useState<CustomLabelData>({
-    headline: 'Mein persönlicher Signature Blend',
-    subtitle: '100% Arabica · Frisch geröstet',
-    dedication: 'Exklusiv für mich kreiert',
-    fontStyle: config.labelCustomization.fontStyles[0]?.id || 'swiss-sans',
+    headline: labelConfig.headlinePlaceholder || 'Mein persönlicher Signature Blend',
+    subtitle: 'Handgefertigt nach Auftrag',
+    dedication: labelConfig.dedicationPlaceholder || '',
+    fontStyle: labelConfig.availableFonts[0]?.id || 'swiss-sans',
     batchNumber: `MZ-${Math.floor(100 + Math.random() * 900)}`,
     roastOrBrewDate: new Date().toLocaleDateString('de-CH'),
   });
 
-  const [activeTab, setActiveTab] = useState<'recipe' | 'options' | 'label'>('recipe');
+  const [activeTab, setActiveTab] = useState<'recipe' | 'fields' | 'label'>('recipe');
 
   // Multi-Slider 100% Lock Redistribution Algorithm
   const handleRatioChange = (changedId: string, rawNewValue: number) => {
-    const targetVal = Math.max(0, Math.min(100, Math.round(rawNewValue)));
+    const targetVal = Math.max(0, Math.min(config.targetTotal || 100, Math.round(rawNewValue)));
     const oldVal = ratios[changedId] || 0;
     const diff = targetVal - oldVal;
 
     if (diff === 0) return;
 
-    // Distribute diff proportionally among other components
+    if (config.sliderMode !== 'percentage_100') {
+      setRatios({ ...ratios, [changedId]: targetVal });
+      return;
+    }
+
     const otherIds = components.filter(c => c.id !== changedId).map(c => c.id);
     const sumOthers = otherIds.reduce((sum, id) => sum + (ratios[id] || 0), 0);
 
     const newRatios: Record<string, number> = { ...ratios, [changedId]: targetVal };
 
     if (sumOthers === 0) {
-      // Evenly distribute the remainder among others
-      const remainder = 100 - targetVal;
+      const remainder = (config.targetTotal || 100) - targetVal;
       const count = otherIds.length;
       let left = remainder;
       otherIds.forEach((id, idx) => {
@@ -95,7 +100,7 @@ export const BlendCustomizer: React.FC = () => {
       let allocated = targetVal;
       otherIds.forEach((id, idx) => {
         if (idx === otherIds.length - 1) {
-          newRatios[id] = Math.max(0, 100 - allocated);
+          newRatios[id] = Math.max(0, (config.targetTotal || 100) - allocated);
         } else {
           const currentShare = ratios[id] || 0;
           const ratioWeight = currentShare / sumOthers;
@@ -110,37 +115,6 @@ export const BlendCustomizer: React.FC = () => {
     setRatios(newRatios);
   };
 
-  // Quick Preset Handlers (e.g. 50/50, 70/30, Single Origin focus)
-  const applyPreset = (presetName: string) => {
-    if (components.length >= 2) {
-      if (presetName === '50/50') {
-        const next: Record<string, number> = {};
-        components.forEach((c, idx) => {
-          next[c.id] = idx === 0 ? 50 : idx === 1 ? 50 : 0;
-        });
-        setRatios(next);
-      } else if (presetName === 'balanced') {
-        const share = Math.floor(100 / components.length);
-        let rem = 100;
-        const next: Record<string, number> = {};
-        components.forEach((c, idx) => {
-          if (idx === components.length - 1) next[c.id] = rem;
-          else {
-            next[c.id] = share;
-            rem -= share;
-          }
-        });
-        setRatios(next);
-      } else if (presetName === 'fruit_forward') {
-        const next: Record<string, number> = {};
-        components.forEach((c, idx) => {
-          next[c.id] = idx === 0 ? 70 : idx === 1 ? 30 : 0;
-        });
-        setRatios(next);
-      }
-    }
-  };
-
   // Recipe calculation (grams & percentage)
   const totalWeightGrams = config.totalWeightGrams || 500;
   const calculatedRecipe: RecipeItem[] = useMemo(() => {
@@ -148,16 +122,17 @@ export const BlendCustomizer: React.FC = () => {
       .filter(c => (ratios[c.id] || 0) > 0)
       .map(c => {
         const ratio = ratios[c.id] || 0;
-        const grams = Math.round((ratio / 100) * totalWeightGrams);
+        const grams = Math.round((ratio / (config.targetTotal || 100)) * totalWeightGrams);
         return {
           componentId: c.id,
           componentName: c.name,
-          origin: c.origin,
+          origin: c.origin || '',
           ratio: ratio,
           grams: grams,
+          unit: c.unitText || config.targetUnit,
         };
       });
-  }, [components, ratios, totalWeightGrams]);
+  }, [components, ratios, totalWeightGrams, config.targetTotal, config.targetUnit]);
 
   // Dynamic Price calculation
   const calculatedPrice = useMemo(() => {
@@ -166,23 +141,25 @@ export const BlendCustomizer: React.FC = () => {
     // Component weight multipliers
     let componentFactor = 0;
     components.forEach(c => {
-      const share = (ratios[c.id] || 0) / 100;
+      const share = (ratios[c.id] || 0) / (config.targetTotal || 100);
       componentFactor += share * (c.priceMultiplier || 1.0);
     });
 
     price = price * (componentFactor > 0 ? componentFactor : 1.0);
 
-    // Option price deltas
-    config.options.forEach(opt => {
-      const chosenValue = selectedOptions[opt.key];
-      const match = opt.values.find(v => v.value === chosenValue);
-      if (match && match.priceDelta) {
-        price += match.priceDelta;
+    // Custom field price deltas
+    customFields.forEach(f => {
+      const val = fieldValues[f.key];
+      if (f.choices) {
+        const matchedChoice = f.choices.find(c => c.value === val);
+        if (matchedChoice && matchedChoice.priceDelta) {
+          price += matchedChoice.priceDelta;
+        }
       }
     });
 
     return Number(price.toFixed(2));
-  }, [activeProduct.basePrice, components, ratios, config.options, selectedOptions]);
+  }, [activeProduct.basePrice, components, ratios, config.targetTotal, customFields, fieldValues]);
 
   // Generate real-time SVG for preview
   const renderedSvg = useMemo(() => {
@@ -191,14 +168,13 @@ export const BlendCustomizer: React.FC = () => {
       producerName: currentProducer.name,
       customLabel: labelData,
       recipe: calculatedRecipe,
-      selections: selectedOptions,
+      selections: fieldValues,
       productTitle: activeProduct.title,
       weightText: activeProduct.unitText,
     });
-  }, [activeProduct, currentProducer.name, labelData, calculatedRecipe, selectedOptions]);
+  }, [activeProduct, currentProducer.name, labelData, calculatedRecipe, fieldValues]);
 
   const handleAddToCart = () => {
-    // Confetti effect on custom creation
     try {
       confetti({
         particleCount: 45,
@@ -206,9 +182,7 @@ export const BlendCustomizer: React.FC = () => {
         origin: { y: 0.85 },
         colors: ['#111111', '#9C4A2F', '#EAEAEA'],
       });
-    } catch (e) {
-      // fallback if canvas-confetti is not loaded
-    }
+    } catch (e) {}
 
     addToCart({
       id: `mto-${Date.now()}`,
@@ -217,7 +191,7 @@ export const BlendCustomizer: React.FC = () => {
       quantity: 1,
       unitPrice: calculatedPrice,
       recipe: calculatedRecipe,
-      selections: selectedOptions,
+      customFieldValues: fieldValues,
       customLabel: labelData,
       renderedLabelSvg: renderedSvg,
       leadTimeInfo: currentProducer.leadTimeSchedule,
@@ -226,7 +200,7 @@ export const BlendCustomizer: React.FC = () => {
 
   return (
     <div className="space-y-6 pb-24">
-      {/* Top Bar Navigation & Header */}
+      {/* Top Bar Navigation */}
       <div className="flex items-center justify-between border-b border-stone-200 pb-4">
         <button
           onClick={() => setCustomerView('producer')}
@@ -236,25 +210,23 @@ export const BlendCustomizer: React.FC = () => {
           ZURÜCK ZUM ATELIER
         </button>
 
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] font-mono uppercase px-2 py-0.5 bg-stone-900 text-white rounded">
-            Live MTO Canvas
-          </span>
-        </div>
+        <span className="text-[11px] font-mono uppercase px-2.5 py-0.5 bg-stone-900 text-white rounded">
+          ✦ Made-to-Order Canvas
+        </span>
       </div>
 
-      {/* Main Layout: 2 Columns on Desktop */}
+      {/* Main Layout: 2 Columns */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
-        {/* Left Column: Interactive Controls (7 Cols) */}
+        {/* Left Column: Controls (7 Cols) */}
         <div className="lg:col-span-7 space-y-6">
           
-          {/* Product Headline & Dynamic Price Sticky Header */}
+          {/* Header Summary */}
           <div className="bg-white border border-stone-200 rounded-xl p-5 shadow-swiss space-y-2">
             <div className="flex justify-between items-start">
               <div>
                 <span className="text-xs font-mono text-stone-500 uppercase tracking-widest block">
-                  {currentProducer.name}
+                  {currentProducer.name} · {currentProducer.city}
                 </span>
                 <h1 className="text-xl sm:text-2xl font-bold text-stone-900 mt-1">
                   {activeProduct.title}
@@ -273,7 +245,7 @@ export const BlendCustomizer: React.FC = () => {
             </p>
           </div>
 
-          {/* Stepper / Tab Switcher */}
+          {/* Stepper Tabs */}
           <div className="flex border-b border-stone-200 text-xs font-mono">
             <button
               onClick={() => setActiveTab('recipe')}
@@ -283,20 +255,24 @@ export const BlendCustomizer: React.FC = () => {
                   : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              <SlidersHorizontal className="w-3.5 h-3.5" />
-              1. REZEPTUR (100%)
+              <SlidersHorizontal className="w-3.5 h-3.5 text-atelier-terracotta" />
+              <span>1. REZEPTUR ({config.targetTotal}{config.targetUnit})</span>
             </button>
-            <button
-              onClick={() => setActiveTab('options')}
-              className={`flex-1 py-3 font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
-                activeTab === 'options'
-                  ? 'border-stone-900 text-stone-900 bg-stone-50/50'
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              <Info className="w-3.5 h-3.5" />
-              2. MAHLGRAD & OPTIONEN
-            </button>
+
+            {customFields.length > 0 && (
+              <button
+                onClick={() => setActiveTab('fields')}
+                className={`flex-1 py-3 font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
+                  activeTab === 'fields'
+                    ? 'border-stone-900 text-stone-900 bg-stone-50/50'
+                    : 'border-transparent text-stone-500 hover:text-stone-800'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 text-atelier-terracotta" />
+                <span>2. ZUSATZOPTIONEN</span>
+              </button>
+            )}
+
             <button
               onClick={() => setActiveTab('label')}
               className={`flex-1 py-3 font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
@@ -305,73 +281,56 @@ export const BlendCustomizer: React.FC = () => {
                   : 'border-transparent text-stone-500 hover:text-stone-800'
               }`}
             >
-              <Eye className="w-3.5 h-3.5" />
-              3. LIVE ETIKETT
+              <Eye className="w-3.5 h-3.5 text-atelier-terracotta" />
+              <span>3. LIVE ETIKETT</span>
             </button>
           </div>
 
-          {/* TAB 1: Recipe & Blend Sliders */}
+          {/* TAB 1: Dynamic Sliders */}
           {activeTab === 'recipe' && (
             <div className="space-y-6 bg-white border border-stone-200 rounded-xl p-5 shadow-swiss">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-stone-900 text-sm uppercase tracking-wider font-mono">
-                    PROZENTUALE MISCHUNG (100% GESPERRT)
-                  </h3>
-                  <p className="text-xs text-stone-500 mt-0.5">
-                    Verschieben Sie die Regler. Die Gesamtrezeptur bleibt immer exakt bei 100%.
-                  </p>
-                </div>
-                {/* Presets */}
-                <div className="flex gap-1">
-                  <button
-                    onClick={() => applyPreset('balanced')}
-                    className="text-[10px] font-mono px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded transition-colors"
-                  >
-                    Gleichmässig
-                  </button>
-                  <button
-                    onClick={() => applyPreset('50/50')}
-                    className="text-[10px] font-mono px-2 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded transition-colors"
-                  >
-                    50 / 50
-                  </button>
-                </div>
+              <div>
+                <h3 className="font-bold text-stone-900 text-sm uppercase tracking-wider font-mono">
+                  {config.sliderTitle}
+                </h3>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  {config.sliderDescription || `Passen Sie die Schieber an. Zielwert: ${config.targetTotal}${config.targetUnit}`}
+                </p>
               </div>
 
               {/* Visual Multi-Color Stack Bar */}
               <div className="space-y-1.5">
-                <div className="h-3 w-full rounded-full overflow-hidden flex bg-stone-100 border border-stone-300">
+                <div className="h-3.5 w-full rounded-full overflow-hidden flex bg-stone-100 border border-stone-300">
                   {components.map(comp => {
                     const ratio = ratios[comp.id] || 0;
                     if (ratio === 0) return null;
                     return (
                       <div
                         key={comp.id}
-                        style={{ width: `${ratio}%`, backgroundColor: comp.color }}
+                        style={{ width: `${(ratio / (config.targetTotal || 100)) * 100}%`, backgroundColor: comp.color }}
                         className="h-full transition-all duration-200"
-                        title={`${comp.name}: ${ratio}%`}
+                        title={`${comp.name}: ${ratio}${config.targetUnit}`}
                       />
                     );
                   })}
                 </div>
                 <div className="flex justify-between text-[10px] font-mono text-stone-500">
-                  <span>Gesamt: 100%</span>
+                  <span>Gesamt: {config.targetTotal}{config.targetUnit}</span>
                   <span>{totalWeightGrams} Gramm Frischmenge</span>
                 </div>
               </div>
 
-              {/* Component Sliders List */}
+              {/* Sliders List */}
               <div className="space-y-4 pt-2">
                 {components.map(comp => {
                   const ratio = ratios[comp.id] || 0;
-                  const grams = Math.round((ratio / 100) * totalWeightGrams);
+                  const grams = Math.round((ratio / (config.targetTotal || 100)) * totalWeightGrams);
 
                   return (
                     <div
                       key={comp.id}
                       className={`p-4 rounded-lg border transition-all ${
-                        ratio > 0 ? 'bg-stone-50/70 border-stone-300' : 'bg-white border-stone-200 opacity-60'
+                        ratio > 0 ? 'bg-stone-50/80 border-stone-300' : 'bg-white border-stone-200 opacity-60'
                       }`}
                     >
                       <div className="flex justify-between items-start mb-2">
@@ -383,129 +342,143 @@ export const BlendCustomizer: React.FC = () => {
                             />
                             <h4 className="font-semibold text-stone-900 text-sm">{comp.name}</h4>
                           </div>
-                          <p className="text-xs text-stone-500">{comp.origin} · {comp.process}</p>
+                          {comp.origin && (
+                            <p className="text-xs text-stone-500">{comp.origin} {comp.process ? `· ${comp.process}` : ''}</p>
+                          )}
                         </div>
                         <div className="text-right font-mono">
-                          <span className="text-base font-bold text-stone-900">{ratio}%</span>
+                          <span className="text-base font-bold text-stone-900">{ratio}{config.targetUnit}</span>
                           <span className="text-xs text-stone-500 block">({grams}g)</span>
                         </div>
                       </div>
 
-                      {/* Flavor Tags */}
-                      <div className="flex flex-wrap gap-1 mb-3">
-                        {comp.notes.map(note => (
-                          <span
-                            key={note}
-                            className="text-[10px] px-2 py-0.5 bg-white border border-stone-200 text-stone-600 rounded"
-                          >
-                            {note}
-                          </span>
-                        ))}
-                      </div>
+                      {/* Flavor Notes */}
+                      {comp.notes && comp.notes.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-3">
+                          {comp.notes.map(note => (
+                            <span key={note} className="text-[10px] px-2 py-0.5 bg-white border border-stone-200 text-stone-600 rounded">
+                              {note}
+                            </span>
+                          ))}
+                        </div>
+                      )}
 
-                      {/* Slider Control */}
-                      <div className="flex items-center gap-3">
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          step="5"
-                          value={ratio}
-                          onChange={(e) => handleRatioChange(comp.id, parseInt(e.target.value, 10))}
-                          className="w-full"
-                        />
-                      </div>
+                      <input
+                        type="range"
+                        min="0"
+                        max={config.targetTotal || 100}
+                        step="5"
+                        value={ratio}
+                        onChange={(e) => handleRatioChange(comp.id, parseInt(e.target.value, 10))}
+                        className="w-full"
+                      />
                     </div>
                   );
                 })}
               </div>
 
-              <div className="pt-2">
-                <button
-                  onClick={() => setActiveTab('options')}
-                  className="w-full py-2.5 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
-                >
-                  <span>Weiter zu Mahlgrad & Optionen</span>
-                  <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
-                </button>
-              </div>
+              <button
+                onClick={() => setActiveTab(customFields.length > 0 ? 'fields' : 'label')}
+                className="w-full py-2.5 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+              >
+                <span>Weiter zum nächsten Schritt</span>
+                <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
+              </button>
             </div>
           )}
 
-          {/* TAB 2: Variants & Options */}
-          {activeTab === 'options' && (
+          {/* TAB 2: Dynamic Custom Fields */}
+          {activeTab === 'fields' && (
             <div className="space-y-6 bg-white border border-stone-200 rounded-xl p-5 shadow-swiss">
               <h3 className="font-bold text-stone-900 text-sm uppercase tracking-wider font-mono">
-                HERSTELLUNGSOPTIONEN & ZUBEREITUNG
+                HERSTELLER-OPTIONEN & MAHLGRADE
               </h3>
 
-              {config.options.map(option => (
-                <div key={option.key} className="space-y-2">
+              {customFields.map(field => (
+                <div key={field.id} className="space-y-2">
                   <label className="text-xs font-bold text-stone-700 uppercase font-mono block">
-                    {option.title}
+                    {field.title} {field.isRequired && <span className="text-atelier-terracotta">*</span>}
                   </label>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {option.values.map(val => {
-                      const isSelected = selectedOptions[option.key] === val.value;
-                      return (
-                        <button
-                          key={val.value}
-                          onClick={() => setSelectedOptions(prev => ({ ...prev, [option.key]: val.value }))}
-                          className={`p-3 rounded-lg border text-left transition-all ${
-                            isSelected
-                              ? 'border-stone-900 bg-stone-900 text-white shadow-sm'
-                              : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-800'
-                          }`}
-                        >
-                          <div className="flex justify-between items-center">
-                            <span className="font-medium text-xs sm:text-sm">{val.label}</span>
-                            {isSelected && <Check className="w-3.5 h-3.5 text-atelier-terracotta" />}
-                          </div>
-                          {val.description && (
-                            <p className={`text-[11px] mt-1 ${isSelected ? 'text-stone-300' : 'text-stone-500'}`}>
-                              {val.description}
-                            </p>
-                          )}
-                          {val.priceDelta ? (
-                            <span className={`text-[10px] font-mono block mt-1 ${isSelected ? 'text-stone-300' : 'text-stone-600'}`}>
-                              +{currentProducer.currency} {val.priceDelta.toFixed(2)}
-                            </span>
-                          ) : null}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {/* Pills */}
+                  {field.type === 'pills' && field.choices && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {field.choices.map(ch => {
+                        const isSelected = fieldValues[field.key] === ch.value;
+                        return (
+                          <button
+                            key={ch.id}
+                            type="button"
+                            onClick={() => setFieldValues({ ...fieldValues, [field.key]: ch.value })}
+                            className={`p-3 rounded-lg border text-left transition-all ${
+                              isSelected
+                                ? 'border-stone-900 bg-stone-900 text-white shadow-sm'
+                                : 'border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-800'
+                            }`}
+                          >
+                            <div className="flex justify-between items-center">
+                              <span className="font-medium text-xs sm:text-sm">{ch.label}</span>
+                              {isSelected && <Check className="w-3.5 h-3.5 text-atelier-terracotta" />}
+                            </div>
+                            {ch.description && (
+                              <p className={`text-[11px] mt-1 ${isSelected ? 'text-stone-300' : 'text-stone-500'}`}>
+                                {ch.description}
+                              </p>
+                            )}
+                            {ch.priceDelta > 0 && (
+                              <span className={`text-[10px] font-mono block mt-1 ${isSelected ? 'text-stone-300' : 'text-stone-600'}`}>
+                                +{currentProducer.currency} {ch.priceDelta.toFixed(2)}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Text Input */}
+                  {field.type === 'text' && (
+                    <input
+                      type="text"
+                      maxLength={field.maxCharacters || 40}
+                      placeholder={field.placeholder || 'Ihre Eingabe...'}
+                      value={fieldValues[field.key] || ''}
+                      onChange={(e) => setFieldValues({ ...fieldValues, [field.key]: e.target.value })}
+                      className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs font-medium"
+                    />
+                  )}
                 </div>
               ))}
 
-              <div className="pt-4 flex gap-3">
+              <div className="pt-2 flex gap-3">
                 <button
+                  type="button"
                   onClick={() => setActiveTab('recipe')}
-                  className="py-2.5 px-4 border border-stone-200 hover:bg-stone-100 rounded-lg text-xs font-semibold text-stone-700"
+                  className="py-2.5 px-4 border border-stone-200 hover:bg-stone-100 rounded-lg text-xs font-semibold"
                 >
                   Zurück
                 </button>
                 <button
+                  type="button"
                   onClick={() => setActiveTab('label')}
-                  className="flex-1 py-2.5 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                  className="flex-1 py-2.5 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2"
                 >
-                  <span>Weiter zur Etiketten-Personalisierung</span>
+                  <span>Weiter zum Etikett</span>
                   <ArrowLeft className="w-3.5 h-3.5 rotate-180" />
                 </button>
               </div>
             </div>
           )}
 
-          {/* TAB 3: Label Customization */}
+          {/* TAB 3: Label Customization bounded by Manufacturer Rules */}
           {activeTab === 'label' && (
             <div className="space-y-6 bg-white border border-stone-200 rounded-xl p-5 shadow-swiss">
               <div>
                 <h3 className="font-bold text-stone-900 text-sm uppercase tracking-wider font-mono">
-                  INDIVIDUELLE VERPACKUNG & ETIKETT
+                  ETIKETTEN-GESTALTUNG NACH HERSTELLERVORGABEN
                 </h3>
                 <p className="text-xs text-stone-500 mt-0.5">
-                  Geben Sie Ihrem Blend einen persönlichen Namen und wählen Sie die typografische Ästhetik.
+                  Geben Sie Ihrer Charge einen Namen im Rahmen der Manufaktur-Gestaltung.
                 </p>
               </div>
 
@@ -514,36 +487,38 @@ export const BlendCustomizer: React.FC = () => {
                 <div className="flex justify-between text-xs font-mono">
                   <label className="font-bold text-stone-700 uppercase">Titel des Blends</label>
                   <span className="text-stone-400">
-                    {labelData.headline.length}/{config.labelCustomization.maxTitleLength}
+                    {labelData.headline.length}/{labelConfig.maxHeadlineLength}
                   </span>
                 </div>
                 <input
                   type="text"
-                  maxLength={config.labelCustomization.maxTitleLength}
+                  maxLength={labelConfig.maxHeadlineLength}
                   value={labelData.headline}
-                  onChange={(e) => setLabelData(prev => ({ ...prev, headline: e.target.value }))}
-                  placeholder="z.B. Julians Morning Roast"
+                  onChange={(e) => setLabelData({ ...labelData, headline: e.target.value })}
+                  placeholder={labelConfig.headlinePlaceholder}
                   className="w-full px-3.5 py-2.5 border border-stone-300 rounded-lg text-sm focus:outline-none focus:border-stone-900 font-medium"
                 />
               </div>
 
-              {/* Dedication input */}
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs font-mono">
-                  <label className="font-bold text-stone-700 uppercase">Widmung / Notiz (Optional)</label>
-                  <span className="text-stone-400">
-                    {(labelData.dedication || '').length}/{config.labelCustomization.maxDedicationLength}
-                  </span>
+              {/* Dedication input if allowed by manufacturer */}
+              {labelConfig.allowDedication && (
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs font-mono">
+                    <label className="font-bold text-stone-700 uppercase">Widmung / Notiz (Optional)</label>
+                    <span className="text-stone-400">
+                      {(labelData.dedication || '').length}/{labelConfig.maxDedicationLength}
+                    </span>
+                  </div>
+                  <input
+                    type="text"
+                    maxLength={labelConfig.maxDedicationLength}
+                    value={labelData.dedication || ''}
+                    onChange={(e) => setLabelData({ ...labelData, dedication: e.target.value })}
+                    placeholder={labelConfig.dedicationPlaceholder || 'z.B. Für besondere Anlässe'}
+                    className="w-full px-3.5 py-2.5 border border-stone-300 rounded-lg text-sm focus:outline-none focus:border-stone-900 italic font-serif"
+                  />
                 </div>
-                <input
-                  type="text"
-                  maxLength={config.labelCustomization.maxDedicationLength}
-                  value={labelData.dedication || ''}
-                  onChange={(e) => setLabelData(prev => ({ ...prev, dedication: e.target.value }))}
-                  placeholder="z.B. Frisch geröstet für das Team Zürich"
-                  className="w-full px-3.5 py-2.5 border border-stone-300 rounded-lg text-sm focus:outline-none focus:border-stone-900 italic font-serif"
-                />
-              </div>
+              )}
 
               {/* Font Style Selection */}
               <div className="space-y-2">
@@ -551,12 +526,13 @@ export const BlendCustomizer: React.FC = () => {
                   Schweizer Typografie-Stil
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  {config.labelCustomization.fontStyles.map(font => {
+                  {labelConfig.availableFonts.map(font => {
                     const isSelected = labelData.fontStyle === font.id;
                     return (
                       <button
                         key={font.id}
-                        onClick={() => setLabelData(prev => ({ ...prev, fontStyle: font.id }))}
+                        type="button"
+                        onClick={() => setLabelData({ ...labelData, fontStyle: font.id })}
                         className={`p-3 rounded-lg border text-center transition-all ${
                           isSelected
                             ? 'border-stone-900 bg-stone-900 text-white shadow-sm'
@@ -574,27 +550,23 @@ export const BlendCustomizer: React.FC = () => {
 
         </div>
 
-        {/* Right Column: Live Packaging Mockup & Sticky Order Bar (5 Cols) */}
+        {/* Right Column: Live Packaging Mockup & Sticky Order Bar */}
         <div className="lg:col-span-5 space-y-6">
-          
           <div className="sticky top-6 space-y-6">
             
-            {/* Live Vector Packaging Preview */}
             <div className="bg-stone-900 rounded-2xl p-6 text-white border border-stone-800 shadow-swiss-lg space-y-4">
               <div className="flex items-center justify-between text-xs font-mono text-stone-400">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  LIVE VEKTOR-VORSCHAU
+                  LIVE VEKTOR-ETIKETT
                 </span>
                 <span>{activeProduct.unitText}</span>
               </div>
 
-              {/* Realistic Packaging Mockup Canvas */}
+              {/* Mockup Canvas */}
               <div className="relative bg-[#1A1A1A] rounded-xl p-4 sm:p-6 border border-stone-700 shadow-inner flex items-center justify-center min-h-[300px] overflow-hidden">
-                
-                {/* SVG Rendered Label placed directly */}
                 <div 
-                  className="w-full max-w-[360px] bg-white rounded shadow-2xl p-1 border border-stone-400 transition-transform duration-300"
+                  className="w-full max-w-[360px] bg-white rounded shadow-2xl p-1 border border-stone-400"
                   dangerouslySetInnerHTML={{ __html: renderedSvg }}
                 />
               </div>
@@ -602,34 +574,27 @@ export const BlendCustomizer: React.FC = () => {
               {/* Recipe Breakdown Pill Summary */}
               <div className="bg-white/5 rounded-lg p-3 space-y-2 text-xs">
                 <span className="font-mono text-stone-400 uppercase text-[10px] block">
-                  Aktuelle Chargen-Metriken
+                  Aktuelle Rezeptur & Einwaage
                 </span>
                 <div className="space-y-1">
                   {calculatedRecipe.map(r => (
                     <div key={r.componentId} className="flex justify-between font-mono text-stone-300 text-[11px]">
-                      <span>{r.ratio}% {r.componentName}</span>
+                      <span>{r.ratio}{config.targetUnit} {r.componentName}</span>
                       <span className="text-stone-400">{r.grams}g</span>
                     </div>
                   ))}
                 </div>
-                {selectedOptions['grind'] && (
-                  <div className="pt-2 border-t border-white/10 flex justify-between text-[11px] text-stone-400">
-                    <span>Mahlgrad:</span>
-                    <span className="text-white font-medium capitalize">
-                      {selectedOptions['grind'].replace('_', ' ')}
-                    </span>
-                  </div>
-                )}
               </div>
 
-              {/* Batch Lead Time Notice */}
-              <div className="text-[11px] text-stone-400 flex items-center gap-2 pt-1">
+              {/* Lead Time Schedule */}
+              <div className="text-[11px] text-stone-400 flex items-center gap-2 pt-1 font-mono">
                 <span className="w-1.5 h-1.5 rounded-full bg-atelier-terracotta shrink-0"></span>
                 <span>{currentProducer.batchScheduleNotice}</span>
               </div>
 
               {/* Add to Cart CTA */}
               <button
+                type="button"
                 onClick={handleAddToCart}
                 className="w-full py-3.5 px-5 bg-white hover:bg-stone-100 text-stone-900 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98]"
               >
@@ -640,7 +605,6 @@ export const BlendCustomizer: React.FC = () => {
             </div>
 
           </div>
-
         </div>
 
       </div>

@@ -1,7 +1,8 @@
-export type CraftCategory = 'coffee' | 'beer' | 'chocolate' | 'spirits' | 'ice_cream' | 'deli';
+export type CraftCategory = 'coffee' | 'beer' | 'chocolate' | 'spirits' | 'ice_cream' | 'deli' | 'tea' | 'bakery';
 export type DACHCountry = 'CH' | 'DE' | 'AT';
 export type CurrencyCode = 'CHF' | 'EUR';
 
+// MARK: - Producer (Gewerbe)
 export interface Producer {
   id: string;
   name: string;
@@ -16,58 +17,98 @@ export interface Producer {
   logoText: string;
   vatNumber: string;
   stripeConnected: boolean;
-  leadTimeSchedule: string; // e.g. "Röstung jeden Dienstag, Versand Mittwoch"
+  leadTimeSchedule: string; // e.g. "Röstung jeden Dienstag, Versand Folgetag"
   batchScheduleNotice: string;
   establishedYear: number;
+  contactEmail: string;
 }
 
-export interface BlendComponent {
+// MARK: - Dynamic Producer-Defined Sliders
+export type SliderMode = 'percentage_100' | 'free_quantity' | 'ratio';
+
+export interface DynamicSliderComponent {
   id: string;
   name: string;
-  origin: string;
-  process?: string; // e.g. "Washed", "Natural", "Cryo-Hop"
+  subtitle?: string;
+  origin?: string;
+  process?: string;
   notes: string[];
+  minRatio?: number;
   maxRatio: number;
-  priceMultiplier: number; // e.g. 1.0, 1.2
-  color: string; // Hex for visual blend bar
+  step?: number;
+  priceMultiplier: number; // 1.0 = base, 1.2 = +20%
+  color: string; // Hex color for visual stack bar
   inStock: boolean;
+  unitText?: string; // e.g. "%", "g", "ml", "Kugeln"
 }
 
-export interface OptionChoice {
+// MARK: - Dynamic Producer-Defined Fields (Optionen & Eingaben)
+export type CustomFieldType = 'pills' | 'select' | 'text' | 'textarea' | 'number' | 'toggle';
+
+export interface DynamicFieldChoice {
+  id: string;
   label: string;
   value: string;
-  priceDelta?: number;
+  priceDelta: number; // e.g. +2.50 CHF
   description?: string;
+  isDefault?: boolean;
 }
 
-export interface CustomizationOption {
+export interface DynamicCustomField {
+  id: string;
   key: string;
   title: string;
-  type: 'select' | 'radio' | 'pills';
-  values: OptionChoice[];
-  defaultValue: string;
+  type: CustomFieldType;
+  description?: string;
+  isRequired: boolean;
+  choices?: DynamicFieldChoice[]; // For pills/select
+  defaultValue?: string | number | boolean;
+  placeholder?: string;
+  maxCharacters?: number;
+  minVal?: number;
+  maxVal?: number;
+  unit?: string;
 }
 
-export interface LabelCustomizationConfig {
+// MARK: - Dynamic Label Editor Settings
+export interface LabelFontOption {
+  id: string;
+  label: string;
+  fontFamily: string;
+  styleClass: string;
+}
+
+export interface ManufacturerLabelConfig {
   allowed: boolean;
-  maxTitleLength: number;
+  templateType: 'coffee_bag' | 'beer_bottle' | 'chocolate_wrap' | 'modern_minimal' | 'custom_box';
+  headlinePlaceholder: string;
+  maxHeadlineLength: number;
+  allowDedication: boolean;
+  dedicationPlaceholder?: string;
   maxDedicationLength: number;
-  fontStyles: Array<{ id: string; label: string; fontFamily: string; styleClass: string }>;
-  templateType: 'coffee_bag' | 'beer_bottle' | 'chocolate_wrap' | 'modern_minimal';
-  badgeOptions?: string[];
+  availableFonts: LabelFontOption[];
+  fixedBrandStamp: string; // e.g. "+ SWISS CRAFT" or "ATELIER CERTIFIED"
+  requiredDisclaimer?: string;
+  backgroundColorHex?: string;
+  accentColorHex?: string;
 }
 
+// MARK: - Complete Made-to-Order Customization Configuration
 export interface CustomizationConfig {
   id: string;
   productId: string;
-  type: 'blend_or_mix' | 'box_builder' | 'single_origin_custom';
-  targetTotalPercent: number; // usually 100
-  totalWeightGrams: number; // e.g. 500g coffee or 330ml bottle
-  components: BlendComponent[];
-  options: CustomizationOption[];
-  labelCustomization: LabelCustomizationConfig;
+  sliderMode: SliderMode; // 'percentage_100', 'free_quantity', 'ratio'
+  targetTotal: number; // e.g. 100% or 500g or 6 bottles
+  targetUnit: string; // "%", "g", "ml", "Stück"
+  totalWeightGrams: number;
+  sliderTitle: string; // e.g. "Bohnenmischung (100% gesperrt)"
+  sliderDescription?: string;
+  components: DynamicSliderComponent[];
+  customFields: DynamicCustomField[];
+  labelConfig: ManufacturerLabelConfig;
 }
 
+// MARK: - Products (Separation: Standard vs Custom)
 export interface Product {
   id: string;
   producerId: string;
@@ -76,28 +117,31 @@ export interface Product {
   description: string;
   category: CraftCategory;
   basePrice: number;
-  unitText: string; // e.g. "500g Beutel", "6x 330ml Box", "100g Tafel"
+  unitText: string;
   weightGrams: number;
-  isCustomizable: boolean;
+  isCustomizable: boolean; // true = Made-to-Order / Customizer, false = Standard Produkt
+  stockQuantity?: number; // For standard products
   isActive: boolean;
   images: string[];
   tags: string[];
   config?: CustomizationConfig;
 }
 
+// MARK: - Customer Order Data
 export interface RecipeItem {
   componentId: string;
   componentName: string;
   origin: string;
-  ratio: number; // Percentage (e.g. 60)
-  grams: number; // Calculated grams based on total weight
+  ratio: number;
+  grams: number;
+  unit?: string;
 }
 
 export interface CustomLabelData {
   headline: string;
   subtitle: string;
   dedication?: string;
-  fontStyle: string; // Font id e.g. 'swiss-sans' | 'editorial-serif' | 'minimal-mono'
+  fontStyle: string;
   batchNumber: string;
   roastOrBrewDate: string;
 }
@@ -109,11 +153,12 @@ export interface OrderItem {
   quantity: number;
   unitPrice: number;
   totalPrice: number;
+  weightGrams: number;
+  isCustomItem: boolean;
   recipe?: RecipeItem[];
-  selections?: Record<string, string>;
+  customFieldValues?: Record<string, any>;
   customLabel?: CustomLabelData;
   renderedLabelSvg?: string;
-  weightGrams: number;
 }
 
 export type OrderStatus = 'paid' | 'in_production' | 'labeling' | 'ready_for_pickup' | 'shipped' | 'completed';
@@ -138,7 +183,7 @@ export interface Order {
   status: OrderStatus;
   currency: CurrencyCode;
   subtotal: number;
-  taxRate: number; // e.g. 0.081 for CH (8.1%)
+  taxRate: number;
   taxAmount: number;
   total: number;
   fulfillmentType: 'shipping' | 'pickup';
@@ -156,7 +201,8 @@ export interface CartItem {
   quantity: number;
   unitPrice: number;
   recipe?: RecipeItem[];
-  selections?: Record<string, string>;
+  customFieldValues?: Record<string, any>;
   customLabel?: CustomLabelData;
   renderedLabelSvg?: string;
+  leadTimeInfo: string;
 }

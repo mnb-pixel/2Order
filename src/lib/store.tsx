@@ -3,11 +3,11 @@ import { Producer, Product, Order, CartItem, OrderStatus } from './types';
 import { SEED_PRODUCERS, SEED_PRODUCTS, INITIAL_ORDERS } from '../db/seed';
 
 interface AppContextType {
-  // Mode
+  // Mode & Role Separation
   mode: 'customer' | 'producer';
   setMode: (mode: 'customer' | 'producer') => void;
 
-  // Data
+  // Multi-Tenant Data
   producers: Producer[];
   products: Product[];
   orders: Order[];
@@ -16,6 +16,10 @@ interface AppContextType {
   selectedProducerId: string;
   setSelectedProducerId: (id: string) => void;
   currentProducer: Producer;
+
+  // New Business Onboarding
+  createProducer: (producerData: Omit<Producer, 'id' | 'slug' | 'stripeConnected'>) => Producer;
+  updateProducer: (id: string, updates: Partial<Producer>) => void;
 
   // Cart
   cart: CartItem[];
@@ -47,14 +51,16 @@ interface AppContextType {
   setIsCheckoutOpen: (open: boolean) => void;
   printSlipOrder: Order | null;
   setPrintSlipOrder: (order: Order | null) => void;
+  isOnboardingOpen: boolean;
+  setIsOnboardingOpen: (open: boolean) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'atelier_mto_state_v1';
+const LOCAL_STORAGE_KEY = 'atelier_mto_state_v2';
 
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  // Mode
+  // Mode: customer vs producer
   const [mode, setMode] = useState<'customer' | 'producer'>('customer');
 
   // Core Data
@@ -89,6 +95,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   const [printSlipOrder, setPrintSlipOrder] = useState<Order | null>(null);
+  const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(false);
 
   // Sync to LocalStorage
   useEffect(() => {
@@ -109,6 +116,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Current producer object
   const currentProducer = producers.find(p => p.id === selectedProducerId) || producers[0];
+
+  // Gewerbe / Producer Creation
+  const createProducer = (data: Omit<Producer, 'id' | 'slug' | 'stripeConnected'>): Producer => {
+    const newId = `prod-${Date.now()}`;
+    const slug = data.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const newProducer: Producer = {
+      ...data,
+      id: newId,
+      slug: slug,
+      stripeConnected: true,
+    };
+
+    setProducers(prev => [newProducer, ...prev]);
+    setSelectedProducerId(newId);
+    return newProducer;
+  };
+
+  const updateProducer = (id: string, updates: Partial<Producer>) => {
+    setProducers(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
 
   // Cart Actions
   const addToCart = (item: CartItem) => {
@@ -155,8 +182,9 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         unitPrice: ci.unitPrice,
         totalPrice: ci.unitPrice * ci.quantity,
         weightGrams: ci.product.weightGrams,
+        isCustomItem: ci.product.isCustomizable,
         recipe: ci.recipe,
-        selections: ci.selections,
+        customFieldValues: ci.customFieldValues,
         customLabel: ci.customLabel,
         renderedLabelSvg: ci.renderedLabelSvg,
       })),
@@ -165,7 +193,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       subtotal: Number(subtotal.toFixed(2)),
       taxRate: taxRate,
       taxAmount: Number(taxAmount.toFixed(2)),
-      total: Number(subtotal.toFixed(2)), // Gross pricing in DACH
+      total: Number(subtotal.toFixed(2)),
       fulfillmentType: orderData.fulfillmentType || 'shipping',
       paymentMethod: orderData.paymentMethod || 'twint',
       paymentStatus: 'paid',
@@ -216,6 +244,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedProducerId,
         setSelectedProducerId,
         currentProducer,
+        createProducer,
+        updateProducer,
         cart,
         addToCart,
         removeFromCart,
@@ -237,6 +267,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setIsCheckoutOpen,
         printSlipOrder,
         setPrintSlipOrder,
+        isOnboardingOpen,
+        setIsOnboardingOpen,
       }}
     >
       {children}

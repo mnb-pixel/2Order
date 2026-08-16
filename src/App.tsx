@@ -9,6 +9,7 @@ import { CartDrawer } from './components/customer/CartDrawer';
 import { CheckoutModal } from './components/customer/CheckoutModal';
 import { ProducerDashboard } from './components/producer/ProducerDashboard';
 import { ProductionSlipModal } from './components/producer/ProductionSlipModal';
+import { ProducerOnboardingModal } from './components/producer/ProducerOnboardingModal';
 import { Smartphone, Monitor } from 'lucide-react';
 
 export const AppContent: React.FC = () => {
@@ -56,6 +57,7 @@ export const AppContent: React.FC = () => {
       <CartDrawer />
       <CheckoutModal />
       <ProductionSlipModal />
+      <ProducerOnboardingModal />
     </div>
   );
 };

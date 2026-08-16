@@ -1,6 +1,6 @@
 import React from 'react';
 import { useApp } from '../../lib/store';
-import { ArrowLeft, MapPin, Clock, ShieldCheck, Sliders, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, ShieldCheck, Sliders, ShoppingBag, Package } from 'lucide-react';
 import { Product } from '../../lib/types';
 
 export const ProducerProfile: React.FC = () => {
@@ -83,17 +83,17 @@ export const ProducerProfile: React.FC = () => {
         </div>
       </div>
 
-      {/* Made-to-Order Customizer Section */}
+      {/* BEREICH 1: MADE-TO-ORDER & MASSANFERTIGUNG */}
       {customizableProducts.length > 0 && (
         <div className="space-y-4">
           <div className="flex items-center justify-between border-b border-stone-200 pb-2">
             <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-atelier-terracotta"></span>
-              <h2 className="text-xs uppercase tracking-widest font-mono font-bold text-stone-800">
-                MADE-TO-ORDER & MASSANFERTIGUNG
+              <span className="w-2.5 h-2.5 rounded-full bg-atelier-terracotta"></span>
+              <h2 className="text-xs uppercase tracking-widest font-mono font-bold text-stone-900">
+                1. MADE-TO-ORDER & SONDERANFERTIGUNG ({customizableProducts.length})
               </h2>
             </div>
-            <span className="text-xs text-stone-500">Live-Konfiguration & Label</span>
+            <span className="text-xs text-stone-500 font-mono">Schieberegler & Live-Etikett</span>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -108,7 +108,7 @@ export const ProducerProfile: React.FC = () => {
                       ✦ Bespoke Canvas
                     </span>
                     <span className="font-mono font-bold text-sm text-stone-900">
-                      {currentProducer.currency} {product.basePrice.toFixed(2)}
+                      ab {currentProducer.currency} {product.basePrice.toFixed(2)}
                     </span>
                   </div>
                   <h3 className="font-bold text-lg text-stone-900">{product.title}</h3>
@@ -128,7 +128,7 @@ export const ProducerProfile: React.FC = () => {
                   className="w-full mt-4 py-3 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-all shadow-sm active:scale-[0.99]"
                 >
                   <Sliders className="w-4 h-4 text-atelier-terracotta" />
-                  <span>Jetzt personalisieren & mischen</span>
+                  <span>Jetzt Rezeptur & Etikett kreieren</span>
                 </button>
               </div>
             ))}
@@ -136,14 +136,17 @@ export const ProducerProfile: React.FC = () => {
         </div>
       )}
 
-      {/* Standard Catalogue Section */}
+      {/* BEREICH 2: STANDARDSORTIMENT DER MANUFAKTUR */}
       {standardProducts.length > 0 && (
         <div className="space-y-4 pt-4">
           <div className="flex items-center justify-between border-b border-stone-200 pb-2">
-            <h2 className="text-xs uppercase tracking-widest font-mono font-bold text-stone-500">
-              STANDARDSORTIMENT DER MANUFAKTUR
-            </h2>
-            <span className="text-xs text-stone-500">{standardProducts.length} Artikel</span>
+            <div className="flex items-center gap-2">
+              <Package className="w-4 h-4 text-emerald-600" />
+              <h2 className="text-xs uppercase tracking-widest font-mono font-bold text-stone-700">
+                2. STANDARDSORTIMENT ({standardProducts.length})
+              </h2>
+            </div>
+            <span className="text-xs text-stone-500 font-mono">Sofort versandfertig</span>
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
