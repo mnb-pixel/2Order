@@ -95,7 +95,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-const LOCAL_STORAGE_KEY = 'atelier_mto_state_v3';
+const LOCAL_STORAGE_KEY = 'atelier_mto_state_v4';
 
 function generateLotNumber(producer: Producer): string {
   const stamp = Math.floor(100000 + Math.random() * 900000);
