@@ -4,29 +4,26 @@ struct ProducerDetailView: View {
     @EnvironmentObject var store: AtelierStore
     let producer: Producer
     
+    @State private var selectedStandardProduct: Product? = nil
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 
-                // Hero Header
+                // Hero Header (using local asset with name normalization)
                 ZStack(alignment: .bottomLeading) {
-                    AsyncImage(url: URL(string: producer.heroImageUrl)) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        Rectangle()
-                            .fill(Color(white: 0.2))
-                    }
-                    .frame(height: 220)
-                    .overlay(
-                        LinearGradient(
-                            gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.85)]),
-                            startPoint: .top,
-                            endPoint: .bottom
+                    Image(producer.heroImageUrl.replacingOccurrences(of: "/images/", with: "").replacingOccurrences(of: ".jpg", with: ""))
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                        .frame(height: 220)
+                        .overlay(
+                            LinearGradient(
+                                gradient: Gradient(colors: [Color.clear, Color.black.opacity(0.85)]),
+                                startPoint: .top,
+                                endPoint: .bottom
+                            )
                         )
-                    )
-                    .clipped()
+                        .clipped()
                     
                     VStack(alignment: .leading, spacing: 6) {
                         Text("\(producer.category.rawValue.uppercased()) · EST. \(producer.establishedYear)")
@@ -71,7 +68,7 @@ struct ProducerDetailView: View {
                 }
                 .padding(.horizontal)
                 
-                // Made-to-Order Products
+                // 1. Made-to-Order Products
                 let customizable = store.products.filter { $0.producerId == producer.id && $0.isCustomizable }
                 if !customizable.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
@@ -79,7 +76,7 @@ struct ProducerDetailView: View {
                             Circle()
                                 .fill(Color(red: 0.61, green: 0.29, blue: 0.18))
                                 .frame(width: 8, height: 8)
-                            Text("MADE-TO-ORDER & SONDERANFERTIGUNG")
+                            Text("1. MADE-TO-ORDER & SONDERANFERTIGUNG")
                                 .font(.system(size: 11, weight: .bold, design: .monospaced))
                                 .foregroundColor(.secondary)
                         }
@@ -128,52 +125,59 @@ struct ProducerDetailView: View {
                     }
                 }
                 
-                // Standard Catalogue Products
+                // 2. Standard Catalogue Products (Click opens ProductInfoSheet)
                 let standards = store.products.filter { $0.producerId == producer.id && !$0.isCustomizable }
                 if !standards.isEmpty {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("STANDARDSORTIMENT")
+                        Text("2. STANDARDSORTIMENT")
                             .font(.system(size: 11, weight: .bold, design: .monospaced))
                             .foregroundColor(.secondary)
                             .padding(.horizontal)
                         
                         ForEach(standards) { prod in
-                            HStack(spacing: 12) {
-                                AsyncImage(url: URL(string: prod.imageUrl)) { image in
-                                    image.resizable().aspectRatio(contentMode: .fill)
-                                } placeholder: {
-                                    Rectangle().fill(Color(white: 0.9))
-                                }
-                                .frame(width: 60, height: 60)
-                                .cornerRadius(8)
-                                .clipped()
-                                
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(prod.title)
-                                        .font(.system(size: 14, weight: .semibold))
-                                    Text(prod.subtitle)
-                                        .font(.system(size: 11))
-                                        .foregroundColor(.secondary)
-                                        .lineLimit(1)
-                                }
-                                
-                                Spacer()
-                                
-                                Button(action: {
-                                    store.addToCart(CartItem(product: prod, producer: producer, quantity: 1, unitPrice: prod.basePrice))
-                                }) {
-                                    Image(systemName: "bag.badge.plus")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(.black)
-                                        .padding(10)
-                                        .background(Color(UIColor.tertiarySystemGroupedBackground))
+                            Button(action: {
+                                selectedStandardProduct = prod
+                                store.triggerHapticFeedback()
+                            }) {
+                                HStack(spacing: 12) {
+                                    Image(prod.imageUrl.replacingOccurrences(of: "/images/", with: "").replacingOccurrences(of: ".jpg", with: ""))
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 65, height: 65)
                                         .cornerRadius(8)
+                                        .clipped()
+                                        .background(Color(white: 0.2))
+                                    
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(prod.title)
+                                            .font(.system(size: 14, weight: .semibold))
+                                            .foregroundColor(.primary)
+                                        Text(prod.subtitle)
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                        Text(prod.unitText)
+                                            .font(.system(size: 10, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    VStack(alignment: .trailing, spacing: 4) {
+                                        Text("\(producer.currency) \(String(format: "%.2f", prod.basePrice))")
+                                            .font(.system(size: 13, weight: .bold, design: .monospaced))
+                                            .foregroundColor(.primary)
+                                        
+                                        Image(systemName: "info.circle")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(Color(red: 0.61, green: 0.29, blue: 0.18))
+                                    }
                                 }
+                                .padding(12)
+                                .background(Color(UIColor.secondarySystemGroupedBackground))
+                                .cornerRadius(10)
+                                .padding(.horizontal)
                             }
-                            .padding(12)
-                            .background(Color(UIColor.secondarySystemGroupedBackground))
-                            .cornerRadius(10)
-                            .padding(.horizontal)
                         }
                     }
                 }
@@ -184,5 +188,8 @@ struct ProducerDetailView: View {
         .background(Color(UIColor.systemGroupedBackground))
         .navigationTitle(producer.name)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(item: $selectedStandardProduct) { prod in
+            ProductInfoSheet(product: prod, producer: producer)
+        }
     }
 }

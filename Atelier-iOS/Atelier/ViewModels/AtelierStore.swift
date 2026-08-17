@@ -44,7 +44,7 @@ class AtelierStore: ObservableObject {
             city: city,
             currency: country == .ch ? "CHF" : "EUR",
             bio: "Handwerkliche Manufaktur mit Made-to-Order Produktion.",
-            heroImageUrl: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=1000&q=80",
+            heroImageUrl: "coffee_roastery_hero",
             vatNumber: vatNumber,
             leadTimeSchedule: leadTimeSchedule,
             batchScheduleNotice: "Wöchentliche Frischecharge",
@@ -120,7 +120,7 @@ class AtelierStore: ObservableObject {
         triggerSuccessFeedback()
     }
     
-    // MARK: - Seed Data Loader
+    // MARK: - Seed Data Loader (All 5 Swiss Craft Producers)
     private func loadSeedData() {
         let maelstrom = Producer(
             id: "prod-maelstrom",
@@ -131,7 +131,7 @@ class AtelierStore: ObservableObject {
             city: "Zürich",
             currency: "CHF",
             bio: "Wir rösten handwerkliche Kaffeespezialitäten in Zürich-West. Unsere Bohnen stammen aus direktem Handel mit Kleinbauern und werden erst nach Eingang Ihrer individuellen Rezeptur frisch chargiert.",
-            heroImageUrl: "https://images.unsplash.com/photo-1447933601403-0c6688de566e?auto=format&fit=crop&w=1000&q=80",
+            heroImageUrl: "coffee_roastery_hero",
             vatNumber: "CHE-412.890.123 MWST",
             leadTimeSchedule: "Röstung jeden Dienstag & Donnerstag",
             batchScheduleNotice: "Nächste Röstung: Dienstag 08:00 Uhr",
@@ -140,7 +140,7 @@ class AtelierStore: ObservableObject {
         )
         
         let aarauHops = Producer(
-            id: "prod-aarau",
+            id: "prod-aarau-hops",
             name: "Aarau Hops & Grain",
             tagline: "Unfiltered Microbrews & Curated Crates",
             category: .beer,
@@ -148,7 +148,7 @@ class AtelierStore: ObservableObject {
             city: "Aarau",
             currency: "CHF",
             bio: "Unfiltrierte Biere aus dem Aargau. Wählen Sie Ihre Lieblingsstile für eine individuelle 6er-Box mit eigenem Etikett.",
-            heroImageUrl: "https://images.unsplash.com/photo-1535958636474-b021ee887b13?auto=format&fit=crop&w=1000&q=80",
+            heroImageUrl: "craft_brewery_hero",
             vatNumber: "CHE-298.114.772 MWST",
             leadTimeSchedule: "Abfüllung & Frischeversand wöchentlich freitags",
             batchScheduleNotice: "Frische Zapfung: Freitag",
@@ -157,7 +157,7 @@ class AtelierStore: ObservableObject {
         )
         
         let cacaoBasel = Producer(
-            id: "prod-cacao",
+            id: "prod-cacao-basel",
             name: "Cacao Atelier Basel",
             tagline: "Bean-to-Bar Chocolate & Grand Cru Infusions",
             category: .chocolate,
@@ -165,7 +165,7 @@ class AtelierStore: ObservableObject {
             city: "Basel",
             currency: "CHF",
             bio: "Feinste Bean-to-Bar Schokoladen mit sortenreinen Edelkakaos. Stellen Sie Kakaogehalt und Edelinversionen mit personalisierter Banderole zusammen.",
-            heroImageUrl: "https://images.unsplash.com/photo-1548907040-4baa42d10919?auto=format&fit=crop&w=1000&q=80",
+            heroImageUrl: "chocolate_atelier_hero",
             vatNumber: "CHE-119.553.901 MWST",
             leadTimeSchedule: "Giessen dienstags, Versand mittwochs",
             batchScheduleNotice: "Giesstermin: Dienstag",
@@ -173,13 +173,47 @@ class AtelierStore: ObservableObject {
             contactEmail: "atelier@cacao-basel.ch"
         )
         
-        self.producers = [maelstrom, aarauHops, cacaoBasel]
+        let gelatoBern = Producer(
+            id: "prod-gletscher-gelato",
+            name: "Gletscher Gelato Bern",
+            tagline: "Artisan Gelato · Kugel für Kugel frisch zusammengestellt",
+            category: .iceCream,
+            country: .ch,
+            city: "Bern",
+            currency: "CHF",
+            bio: "Täglich frisch gerührtes Gelato aus Berner Bergmilch. Stellen Sie Ihren eigenen Becher aus unseren Sorten zusammen — nur zur Abholung.",
+            heroImageUrl: "gelato_hero",
+            vatNumber: "CHE-330.774.221 MWST",
+            leadTimeSchedule: "Täglich frisch gerührt, Abholung ab 11:00",
+            batchScheduleNotice: "Heutige Rührung bereit ab 11:00 Uhr",
+            establishedYear: 2023,
+            contactEmail: "ciao@gletscher-gelato.ch"
+        )
+        
+        let zopfZeit = Producer(
+            id: "prod-zopf-zeit",
+            name: "Bäckerei Zopf & Zeit",
+            tagline: "Konditorei & Sauerteig-Atelier für Anlass-Torten",
+            category: .bakery,
+            country: .ch,
+            city: "Luzern",
+            currency: "CHF",
+            bio: "Handgefertigte Torten und Festgebäck für besondere Anlässe. Jede Torte wird als meisterhaftes Einzelstück nach Ihren Wünschen gefertigt.",
+            heroImageUrl: "bakery_hero",
+            vatNumber: "CHE-401.882.556 MWST",
+            leadTimeSchedule: "Vorlaufzeit mind. 5 Werktage ab Offertannahme",
+            batchScheduleNotice: "Backtag nach Vereinbarung",
+            establishedYear: 2018,
+            contactEmail: "atelier@zopf-zeit.ch"
+        )
+        
+        self.producers = [maelstrom, aarauHops, cacaoBasel, gelatoBern, zopfZeit]
         self.selectedProducer = maelstrom
         
         // MTO Coffee Customizer
         let coffeeConfig = CustomizationConfig(
             id: "cfg-coffee",
-            productId: "prod-coffee-custom",
+            productId: "prod-coffee-custom-blend",
             sliderTitle: "Bohnenmischung (100% gesperrt)",
             totalWeightGrams: 500,
             components: [
@@ -212,11 +246,11 @@ class AtelierStore: ObservableObject {
             )
         )
         
-        // 1. Made-to-Order Produkt
+        // Products
         let coffeeCustom = Product(
-            id: "prod-coffee-custom",
+            id: "prod-coffee-custom-blend",
             producerId: "prod-maelstrom",
-            title: "Signature Custom Blend (500g)",
+            title: "Signature Custom Coffee Blend (500g)",
             subtitle: "Kreieren Sie Ihren persönlichen Blend mit Live-Etikett",
             description: "Kombinieren Sie Single Origins per Schieberegler exakt nach Ihrem Geschmacksprofil. Wir wiegen grammgenau ein und drucken Ihr persönliches Etikett.",
             category: .coffee,
@@ -224,14 +258,13 @@ class AtelierStore: ObservableObject {
             unitText: "500g Beutel",
             weightGrams: 500,
             isCustomizable: true,
-            imageUrl: "https://images.unsplash.com/photo-1559056199-641a0ac8b55e?auto=format&fit=crop&w=600&q=80",
+            imageUrl: "coffee_custom_blend",
             tags: ["Made to Order", "Direct Trade", "Zürich"],
             config: coffeeConfig
         )
         
-        // 2. Standard Produkt
         let coffeeGeisha = Product(
-            id: "prod-coffee-geisha",
+            id: "prod-coffee-standard-geisha",
             producerId: "prod-maelstrom",
             title: "Panama Boquete Geisha Lot #4",
             subtitle: "Limitierte Rarität mit floralem Jasmin-Bouquet",
@@ -242,12 +275,79 @@ class AtelierStore: ObservableObject {
             weightGrams: 250,
             isCustomizable: false,
             stockQuantity: 42,
-            imageUrl: "https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=600&q=80",
+            imageUrl: "coffee_roastery_hero",
             tags: ["Single Origin", "Micro-Lot"],
             config: nil
         )
         
-        self.products = [coffeeCustom, coffeeGeisha]
+        let beerBox = Product(
+            id: "prod-beer-custom-box",
+            producerId: "prod-aarau-hops",
+            title: "Curated 6er Craft Beer Flight & Custom Label",
+            subtitle: "Stellen Sie Ihre 6 Lieblingsflaschen zusammen",
+            description: "Wählen Sie die 6 Flaschen Ihrer Box aus unseren frisch gebrauten Suden. Inklusive individuellem Flaschenetikett.",
+            category: .beer,
+            basePrice: 28.50,
+            unitText: "6x 330ml Box",
+            weightGrams: 1980,
+            isCustomizable: true,
+            imageUrl: "craft_beer_box",
+            tags: ["Craft Beer", "Unfiltriert", "Aargau"],
+            config: nil
+        )
+        
+        let chocolateBar = Product(
+            id: "prod-chocolate-bar-custom",
+            producerId: "prod-cacao-basel",
+            title: "Grand Cru Schokoladentafel (100g)",
+            subtitle: "Bean-to-Bar Grand Cru mit Banderole",
+            description: "Sortenreine Edelschokolade mit traditioneller Walzung und Kakaobruch-Inklusionen.",
+            category: .chocolate,
+            basePrice: 12.50,
+            unitText: "100g Tafel",
+            weightGrams: 100,
+            isCustomizable: false,
+            stockQuantity: 65,
+            imageUrl: "chocolate_bar_custom",
+            tags: ["Bean-to-Bar", "Grand Cru"],
+            config: nil
+        )
+        
+        let gelatoCup = Product(
+            id: "prod-gelato-cup",
+            producerId: "prod-gletscher-gelato",
+            title: "Build-Your-Own Gelato Becher",
+            subtitle: "Kugeln & Toppings frei kombinieren",
+            description: "Tagesfrisches Gelato aus Berner Alpenmilch.",
+            category: .iceCream,
+            basePrice: 6.50,
+            unitText: "Becher (3 Kugeln)",
+            weightGrams: 240,
+            isCustomizable: false,
+            stockQuantity: 80,
+            imageUrl: "gelato_hero",
+            tags: ["Tagesfrisch", "Abholung"],
+            config: nil
+        )
+        
+        let bakeryCake = Product(
+            id: "prod-bakery-cake",
+            producerId: "prod-zopf-zeit",
+            title: "Anlass-Torte & Festgebäck nach Mass",
+            subtitle: "Individuelle Offerte für Ihre Feier",
+            description: "Handgefertigte Festtagstorte für besondere Momente.",
+            category: .bakery,
+            basePrice: 65.00,
+            unitText: "Torte (8-16 Pers.)",
+            weightGrams: 1200,
+            isCustomizable: false,
+            stockQuantity: 10,
+            imageUrl: "bakery_hero",
+            tags: ["Festtorte", "Konditorei"],
+            config: nil
+        )
+        
+        self.products = [coffeeCustom, coffeeGeisha, beerBox, chocolateBar, gelatoCup, bakeryCake]
         self.activeProduct = coffeeCustom
         
         // Seed initial order

@@ -1,0 +1,13 @@
+{
+  "images" : [
+    {
+      "filename" : "chocolate_atelier_hero.jpg",
+      "idiom" : "universal",
+      "scale" : "1x"
+    }
+  ],
+  "info" : {
+    "author" : "xcode",
+    "version" : 1
+  }
+}

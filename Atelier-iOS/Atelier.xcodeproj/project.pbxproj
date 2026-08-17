@@ -18,6 +18,7 @@
 		10000009 /* CheckoutView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000009 /* CheckoutView.swift */; };
 		10000010 /* OrderTrackerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000010 /* OrderTrackerView.swift */; };
 		10000011 /* ProducerPortalView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000011 /* ProducerPortalView.swift */; };
+		10000013 /* ProductInfoSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20000014 /* ProductInfoSheet.swift */; };
 		10000012 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 20000012 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
 
@@ -34,6 +35,7 @@
 		20000009 /* CheckoutView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckoutView.swift; sourceTree = "<group>"; };
 		20000010 /* OrderTrackerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OrderTrackerView.swift; sourceTree = "<group>"; };
 		20000011 /* ProducerPortalView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProducerPortalView.swift; sourceTree = "<group>"; };
+		20000014 /* ProductInfoSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProductInfoSheet.swift; sourceTree = "<group>"; };
 		20000012 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		20000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -105,6 +107,7 @@
 				20000009 /* CheckoutView.swift */,
 				20000010 /* OrderTrackerView.swift */,
 				20000011 /* ProducerPortalView.swift */,
+				20000014 /* ProductInfoSheet.swift */,
 			);
 			path = Views;
 			sourceTree = "<group>";
@@ -190,6 +193,7 @@
 				10000009 /* CheckoutView.swift in Sources */,
 				10000010 /* OrderTrackerView.swift in Sources */,
 				10000011 /* ProducerPortalView.swift in Sources */,
+				10000013 /* ProductInfoSheet.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
