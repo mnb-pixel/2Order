@@ -9,6 +9,7 @@ import { RequestsTracker } from './components/customer/RequestsTracker';
 import { MyRecipesView } from './components/customer/MyRecipesView';
 import { CartDrawer } from './components/customer/CartDrawer';
 import { CheckoutModal } from './components/customer/CheckoutModal';
+import { ProductInfoModal } from './components/customer/ProductInfoModal';
 import { ProducerDashboard } from './components/producer/ProducerDashboard';
 import { ProductionSlipModal } from './components/producer/ProductionSlipModal';
 import { ProducerOnboardingModal } from './components/producer/ProducerOnboardingModal';
@@ -60,6 +61,7 @@ export const AppContent: React.FC = () => {
       {/* Persistent Modals & Overlays */}
       <CartDrawer />
       <CheckoutModal />
+      <ProductInfoModal />
       <ProductionSlipModal />
       <ProducerOnboardingModal />
     </div>

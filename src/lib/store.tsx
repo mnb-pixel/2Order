@@ -30,6 +30,11 @@ interface AppContextType {
   setSelectedProducerId: (id: string) => void;
   currentProducer: Producer;
 
+  // Ownership: businesses (Gewerbe) that belong to the current user, as opposed
+  // to the wider marketplace of other manufacturers visible in the customer app.
+  myProducerIds: string[];
+  myProducers: Producer[];
+
   // New Business Onboarding
   createProducer: (producerData: Omit<Producer, 'id' | 'slug' | 'stripeConnected'>) => Producer;
   updateProducer: (id: string, updates: Partial<Producer>) => void;
@@ -74,6 +79,8 @@ interface AppContextType {
   setCustomerView: (view: 'discover' | 'producer' | 'customizer' | 'tracking' | 'requests' | 'recipes') => void;
   activeProduct: Product | null;
   setActiveProduct: (product: Product | null) => void;
+  infoProduct: Product | null;
+  setInfoProduct: (product: Product | null) => void;
 
   // Modals & Drawers
   isCartOpen: boolean;
@@ -151,6 +158,18 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Selected Producer for Portal
   const [selectedProducerId, setSelectedProducerId] = useState<string>('prod-maelstrom');
 
+  // Ownership: which Gewerbe/businesses belong to the current user. Defaults to the
+  // demo business (prod-maelstrom) plus, for existing local sessions created before
+  // this tracking existed, any producer beyond the original seed set (i.e. businesses
+  // the user already registered via onboarding).
+  const [myProducerIds, setMyProducerIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_my_producer_ids`);
+    if (saved) return JSON.parse(saved);
+    const seedIds = new Set(SEED_PRODUCERS.map(p => p.id));
+    const extraIds = producers.filter(p => !seedIds.has(p.id)).map(p => p.id);
+    return ['prod-maelstrom', ...extraIds];
+  });
+
   // Cart
   const [cart, setCart] = useState<CartItem[]>(() => {
     const saved = localStorage.getItem(`${LOCAL_STORAGE_KEY}_cart`);
@@ -160,6 +179,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Navigation & Modals
   const [customerView, setCustomerView] = useState<AppContextType['customerView']>('discover');
   const [activeProduct, setActiveProduct] = useState<Product | null>(products[0] || null);
+  const [infoProduct, setInfoProduct] = useState<Product | null>(null);
   const [activeOrder, setActiveOrder] = useState<Order | null>(null);
   const [activeQuote, setActiveQuote] = useState<Quote | null>(null);
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
@@ -200,8 +220,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${LOCAL_STORAGE_KEY}_cart`, JSON.stringify(cart));
   }, [cart]);
 
+  useEffect(() => {
+    localStorage.setItem(`${LOCAL_STORAGE_KEY}_my_producer_ids`, JSON.stringify(myProducerIds));
+  }, [myProducerIds]);
+
   // Current producer object
   const currentProducer = producers.find(p => p.id === selectedProducerId) || producers[0];
+  const myProducers = producers.filter(p => myProducerIds.includes(p.id));
+
+  // Switching into the Produzenten-Portal must never land the user in another
+  // manufacturer's workspace just because they were browsing that Atelier as a
+  // customer beforehand — snap back to one of their own Gewerbe in that case.
+  const handleSetMode = (newMode: 'customer' | 'producer') => {
+    if (newMode === 'producer' && myProducerIds.length > 0 && !myProducerIds.includes(selectedProducerId)) {
+      setSelectedProducerId(myProducerIds[0]);
+    }
+    setMode(newMode);
+  };
 
   // Gewerbe / Producer Creation
   const createProducer = (data: Omit<Producer, 'id' | 'slug' | 'stripeConnected'>): Producer => {
@@ -215,6 +250,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setProducers(prev => [newProducer, ...prev]);
+    setMyProducerIds(prev => [newId, ...prev]);
     setSelectedProducerId(newId);
     return newProducer;
   };
@@ -444,7 +480,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     <AppContext.Provider
       value={{
         mode,
-        setMode,
+        setMode: handleSetMode,
         producers,
         products,
         orders,
@@ -455,6 +491,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         selectedProducerId,
         setSelectedProducerId,
         currentProducer,
+        myProducerIds,
+        myProducers,
         createProducer,
         updateProducer,
         cart,
@@ -484,6 +522,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setCustomerView,
         activeProduct,
         setActiveProduct,
+        infoProduct,
+        setInfoProduct,
         isCartOpen,
         setIsCartOpen,
         isCheckoutOpen,

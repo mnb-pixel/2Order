@@ -67,9 +67,18 @@ export const BlendCustomizer: React.FC = () => {
     roastOrBrewDate: new Date().toLocaleDateString('de-CH'),
   });
 
-  const [activeTab, setActiveTab] = useState<'recipe' | 'fields' | 'label'>(
-    hasRecipeStep ? 'recipe' : (customFields.length > 0 ? 'fields' : 'label')
-  );
+  const initialTab: 'recipe' | 'fields' | 'label' = hasRecipeStep ? 'recipe' : (customFields.length > 0 ? 'fields' : 'label');
+  const [activeTab, setActiveTab] = useState<'recipe' | 'fields' | 'label'>(initialTab);
+
+  // Tracks which steps the customer has actually opened, so "In den Warenkorb" can be
+  // gated on having gone through the full flow (recipe/fields/label) rather than just
+  // being reachable from the sticky sidebar at any point.
+  const [visitedTabs, setVisitedTabs] = useState<Set<string>>(() => new Set([initialTab]));
+
+  const goToTab = (tab: 'recipe' | 'fields' | 'label') => {
+    setActiveTab(tab);
+    setVisitedTabs(prev => (prev.has(tab) ? prev : new Set(prev).add(tab)));
+  };
 
   // Multi-Slider 100% Lock Redistribution Algorithm
   const handleRatioChange = (changedId: string, rawNewValue: number) => {
@@ -198,7 +207,27 @@ export const BlendCustomizer: React.FC = () => {
     });
   }, [activeProduct, currentProducer.name, labelData, calculatedRecipe, fieldValues, activeAllergens]);
 
+  // Gate "In den Warenkorb": customer must have gone through every applicable step
+  // (recipe/fields are pre-filled with sane defaults, but the label is the one step
+  // that needs a deliberate visit) and filled in required custom fields + a label title.
+  const missingRequiredFields = customFields.filter(
+    f => f.isRequired && (fieldValues[f.key] === undefined || fieldValues[f.key] === '')
+  );
+  const isLabelDefined = labelData.headline.trim().length > 0;
+  const hasSeenLabelStep = visitedTabs.has('label');
+  const canAddToCart = hasSeenLabelStep && isLabelDefined && missingRequiredFields.length === 0;
+
+  const addToCartBlockedReason = !hasSeenLabelStep
+    ? 'Bitte zuerst das Etikett gestalten (Schritt 3).'
+    : !isLabelDefined
+      ? 'Bitte einen Titel für das Etikett vergeben.'
+      : missingRequiredFields.length > 0
+        ? `Bitte Pflichtfeld ausfüllen: ${missingRequiredFields[0].title}`
+        : null;
+
   const handleAddToCart = () => {
+    if (!canAddToCart) return;
+
     try {
       confetti({
         particleCount: 45,
@@ -273,7 +302,7 @@ export const BlendCustomizer: React.FC = () => {
           <div className="flex border-b border-stone-200 text-xs font-mono">
             {hasRecipeStep && (
               <button
-                onClick={() => setActiveTab('recipe')}
+                onClick={() => goToTab('recipe')}
                 className={`flex-1 py-3 font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
                   activeTab === 'recipe'
                     ? 'border-stone-900 text-stone-900 bg-stone-50/50'
@@ -287,7 +316,7 @@ export const BlendCustomizer: React.FC = () => {
 
             {customFields.length > 0 && (
               <button
-                onClick={() => setActiveTab('fields')}
+                onClick={() => goToTab('fields')}
                 className={`flex-1 py-3 font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
                   activeTab === 'fields'
                     ? 'border-stone-900 text-stone-900 bg-stone-50/50'
@@ -300,7 +329,7 @@ export const BlendCustomizer: React.FC = () => {
             )}
 
             <button
-              onClick={() => setActiveTab('label')}
+              onClick={() => goToTab('label')}
               className={`flex-1 py-3 font-semibold border-b-2 transition-all flex items-center justify-center gap-2 ${
                 activeTab === 'label'
                   ? 'border-stone-900 text-stone-900 bg-stone-50/50'
@@ -409,7 +438,7 @@ export const BlendCustomizer: React.FC = () => {
               </div>
 
               <button
-                onClick={() => setActiveTab(customFields.length > 0 ? 'fields' : 'label')}
+                onClick={() => goToTab(customFields.length > 0 ? 'fields' : 'label')}
                 className="w-full py-2.5 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
               >
                 <span>Weiter zum nächsten Schritt</span>
@@ -484,14 +513,14 @@ export const BlendCustomizer: React.FC = () => {
               <div className="pt-2 flex gap-3">
                 <button
                   type="button"
-                  onClick={() => setActiveTab('recipe')}
+                  onClick={() => goToTab('recipe')}
                   className="py-2.5 px-4 border border-stone-200 hover:bg-stone-100 rounded-lg text-xs font-semibold"
                 >
                   Zurück
                 </button>
                 <button
                   type="button"
-                  onClick={() => setActiveTab('label')}
+                  onClick={() => goToTab('label')}
                   className="flex-1 py-2.5 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-2"
                 >
                   <span>Weiter zum Etikett</span>
@@ -638,11 +667,19 @@ export const BlendCustomizer: React.FC = () => {
               <button
                 type="button"
                 onClick={handleAddToCart}
-                className="w-full py-3.5 px-5 bg-white hover:bg-stone-100 text-stone-900 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.98]"
+                disabled={!canAddToCart}
+                className={`w-full py-3.5 px-5 rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition-all shadow-md ${
+                  canAddToCart
+                    ? 'bg-white hover:bg-stone-100 text-stone-900 active:scale-[0.98]'
+                    : 'bg-stone-700 text-stone-400 cursor-not-allowed'
+                }`}
               >
-                <ShoppingBag className="w-4 h-4 text-atelier-terracotta" />
+                <ShoppingBag className={`w-4 h-4 ${canAddToCart ? 'text-atelier-terracotta' : 'text-stone-500'}`} />
                 <span>{activeProduct.transactionMode === 'quote_request' ? 'Für Anfrage vormerken' : 'In den Warenkorb'} — {currentProducer.currency} {calculatedPrice.toFixed(2)}</span>
               </button>
+              {!canAddToCart && addToCartBlockedReason && (
+                <p className="text-[11px] text-amber-400 text-center -mt-2">{addToCartBlockedReason}</p>
+              )}
 
               {/* Save Recipe for reorder */}
               <button

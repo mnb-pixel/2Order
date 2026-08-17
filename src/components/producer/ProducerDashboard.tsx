@@ -10,7 +10,7 @@ import { Sliders, Kanban, LayoutTemplate, Settings, TrendingUp, Package, Clock, 
 type ProducerTab = 'kds' | 'products' | 'templates' | 'settings' | 'quotes';
 
 export const ProducerDashboard: React.FC = () => {
-  const { producers, currentProducer, setSelectedProducerId, orders, products, quotes, setIsOnboardingOpen, getBatchCapacityInfo } = useApp();
+  const { myProducers, currentProducer, setSelectedProducerId, orders, products, quotes, setIsOnboardingOpen, getBatchCapacityInfo } = useApp();
   const [activeTab, setActiveTab] = useState<ProducerTab>('products');
 
   const producerOrders = orders.filter(o => o.producerId === currentProducer.id);
@@ -61,7 +61,7 @@ export const ProducerDashboard: React.FC = () => {
           <div className="flex flex-wrap items-center gap-2">
             <div className="bg-stone-800/90 border border-stone-700 p-1 rounded-xl flex items-center gap-1 text-xs font-mono">
               <span className="text-stone-400 px-2 text-[10px] uppercase font-bold">Gewerbe:</span>
-              {producers.map(p => (
+              {myProducers.map(p => (
                 <button
                   key={p.id}
                   onClick={() => setSelectedProducerId(p.id)}
@@ -214,7 +214,7 @@ export const ProducerDashboard: React.FC = () => {
       {activeTab === 'kds' && <ProductionQueueKDS />}
       {activeTab === 'quotes' && <QuoteManager />}
       {activeTab === 'templates' && <LabelTemplateEditor />}
-      {activeTab === 'settings' && <MerchantSettings />}
+      {activeTab === 'settings' && <MerchantSettings key={currentProducer.id} />}
 
     </div>
   );

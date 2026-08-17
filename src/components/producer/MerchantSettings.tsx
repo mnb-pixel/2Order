@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
-import { ShieldCheck, CreditCard, Clock, CheckCircle2, Kanban } from 'lucide-react';
+import { CraftCategory, DACHCountry, CurrencyCode } from '../../lib/types';
+import { CATEGORY_META, CATEGORY_LIST } from '../../lib/categoryPresets';
+import { ShieldCheck, CreditCard, Clock, CheckCircle2, Kanban, Building2 } from 'lucide-react';
 
 export const MerchantSettings: React.FC = () => {
   const { currentProducer, updateProducer, getBatchCapacityInfo } = useApp();
@@ -9,7 +11,121 @@ export const MerchantSettings: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      
+
+      {/* Gewerbe-Stammdaten */}
+      <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-swiss space-y-4">
+        <div className="flex items-center gap-2 border-b border-stone-200 pb-3">
+          <Building2 className="w-4 h-4 text-stone-900" />
+          <h3 className="text-xs uppercase font-mono font-bold text-stone-800 tracking-wider">
+            STAMMDATEN & PROFIL DES GEWERBES
+          </h3>
+        </div>
+
+        <p className="text-xs text-stone-600 leading-relaxed">
+          Diese Angaben steuern Ihr öffentliches Profil im Kunden-App sowie die rechtlichen Angaben auf Rechnungen und Etiketten.
+        </p>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+          <div className="sm:col-span-2">
+            <label className="font-mono text-stone-600 block mb-1 font-bold">Gewerbe- / Betriebsname</label>
+            <input
+              type="text"
+              defaultValue={currentProducer.name}
+              onBlur={(e) => updateProducer(currentProducer.id, { name: e.target.value })}
+              className="w-full px-3 py-2 border border-stone-300 rounded-lg font-semibold text-xs"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="font-mono text-stone-600 block mb-1 font-bold">Slogan / Tagline</label>
+            <input
+              type="text"
+              defaultValue={currentProducer.tagline}
+              onBlur={(e) => updateProducer(currentProducer.id, { tagline: e.target.value })}
+              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="font-mono text-stone-600 block mb-1 font-bold">Handwerkskategorie</label>
+            <select
+              defaultValue={currentProducer.category}
+              onChange={(e) => updateProducer(currentProducer.id, { category: e.target.value as CraftCategory })}
+              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs bg-white"
+            >
+              {CATEGORY_LIST.map(id => (
+                <option key={id} value={id}>{CATEGORY_META[id].label}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="font-mono text-stone-600 block mb-1 font-bold">Standort / Stadt</label>
+            <input
+              type="text"
+              defaultValue={currentProducer.city}
+              onBlur={(e) => updateProducer(currentProducer.id, { city: e.target.value })}
+              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs"
+            />
+          </div>
+
+          <div>
+            <label className="font-mono text-stone-600 block mb-1 font-bold">Land & Währung</label>
+            <div className="flex gap-2">
+              <select
+                defaultValue={currentProducer.country}
+                onChange={(e) => {
+                  const c = e.target.value as DACHCountry;
+                  const currency: CurrencyCode = c === 'CH' ? 'CHF' : 'EUR';
+                  updateProducer(currentProducer.id, { country: c, currency });
+                }}
+                className="w-1/2 px-2 py-2 border border-stone-300 rounded-lg text-xs bg-white"
+              >
+                <option value="CH">Schweiz (CH)</option>
+                <option value="DE">Deutschland (DE)</option>
+                <option value="AT">Österreich (AT)</option>
+              </select>
+              <input
+                type="text"
+                disabled
+                value={currentProducer.currency}
+                className="w-1/2 px-2 py-2 bg-stone-100 border border-stone-300 rounded-lg text-xs font-mono font-bold text-stone-600"
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="font-mono text-stone-600 block mb-1 font-bold">MwSt.-Nummer (UID / Steuernummer)</label>
+            <input
+              type="text"
+              defaultValue={currentProducer.vatNumber}
+              onBlur={(e) => updateProducer(currentProducer.id, { vatNumber: e.target.value })}
+              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs font-mono"
+            />
+          </div>
+
+          <div>
+            <label className="font-mono text-stone-600 block mb-1 font-bold">Kontakt E-Mail</label>
+            <input
+              type="email"
+              defaultValue={currentProducer.contactEmail}
+              onBlur={(e) => updateProducer(currentProducer.id, { contactEmail: e.target.value })}
+              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs"
+            />
+          </div>
+
+          <div className="sm:col-span-2">
+            <label className="font-mono text-stone-600 block mb-1 font-bold">Betriebsbeschreibung / Story</label>
+            <textarea
+              rows={2}
+              defaultValue={currentProducer.bio}
+              onBlur={(e) => updateProducer(currentProducer.id, { bio: e.target.value })}
+              className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs"
+            />
+          </div>
+        </div>
+      </div>
+
       {/* Stripe Connect & Merchant of Record Status */}
       <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-swiss space-y-4">
         <div className="flex items-center justify-between border-b border-stone-200 pb-3">
@@ -69,6 +185,7 @@ export const MerchantSettings: React.FC = () => {
             <input
               type="text"
               defaultValue={currentProducer.leadTimeSchedule}
+              onBlur={(e) => updateProducer(currentProducer.id, { leadTimeSchedule: e.target.value })}
               className="w-full px-3 py-2 border border-stone-300 rounded-lg font-medium text-xs"
             />
           </div>
@@ -78,6 +195,7 @@ export const MerchantSettings: React.FC = () => {
             <input
               type="text"
               defaultValue={currentProducer.batchScheduleNotice}
+              onBlur={(e) => updateProducer(currentProducer.id, { batchScheduleNotice: e.target.value })}
               className="w-full px-3 py-2 border border-stone-300 rounded-lg font-medium text-xs"
             />
           </div>

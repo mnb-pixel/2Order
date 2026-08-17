@@ -5,7 +5,7 @@ import { Product } from '../../lib/types';
 import { ALLERGEN_LABELS } from '../../lib/allergens';
 
 export const ProducerProfile: React.FC = () => {
-  const { currentProducer, products, reviews, setCustomerView, setActiveProduct, addToCart } = useApp();
+  const { currentProducer, products, reviews, setCustomerView, setActiveProduct, addToCart, setInfoProduct } = useApp();
 
   const producerProducts = products.filter(p => p.producerId === currentProducer.id);
   const customizableProducts = producerProducts.filter(p => p.isCustomizable);
@@ -171,7 +171,8 @@ export const ProducerProfile: React.FC = () => {
             {standardProducts.map(product => (
               <div
                 key={product.id}
-                className="bg-white border border-stone-200 rounded-xl overflow-hidden p-4 space-y-3 flex flex-col justify-between hover:border-stone-400 transition-colors shadow-swiss"
+                onClick={() => setInfoProduct(product)}
+                className="bg-white border border-stone-200 rounded-xl overflow-hidden p-4 space-y-3 flex flex-col justify-between hover:border-stone-400 transition-colors shadow-swiss cursor-pointer"
               >
                 <div>
                   <div className="h-36 rounded-lg overflow-hidden bg-stone-100 mb-3">
@@ -193,7 +194,7 @@ export const ProducerProfile: React.FC = () => {
                     </span>
                   </div>
                   <button
-                    onClick={() => handleAddStandardToCart(product)}
+                    onClick={(e) => { e.stopPropagation(); handleAddStandardToCart(product); }}
                     className="p-2 bg-stone-100 hover:bg-stone-900 hover:text-white rounded-lg transition-colors text-stone-900"
                     title="In den Warenkorb"
                   >
