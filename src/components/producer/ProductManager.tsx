@@ -4,7 +4,34 @@ import { Product, ShippingRestriction, TransactionMode } from '../../lib/types';
 import { DynamicCanvasBuilder } from './DynamicCanvasBuilder';
 import { CATEGORY_META } from '../../lib/categoryPresets';
 import { ALL_ALLERGEN_CODES, ALLERGEN_LABELS } from '../../lib/allergens';
-import { Plus, Trash2, Save, Sliders, Package } from 'lucide-react';
+import { Plus, Trash2, Save, Sliders, Package, ImageUp } from 'lucide-react';
+
+// Downscales an uploaded photo client-side (max 1000px edge, JPEG q0.85) before
+// turning it into a data URL. There is no backend/object storage in this app —
+// everything lives in localStorage — so keeping the encoded size sane matters.
+function readImageFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(reader.error);
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error('Bild konnte nicht gelesen werden.'));
+      img.onload = () => {
+        const maxEdge = 1000;
+        const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('Canvas nicht verfügbar.')); return; }
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = reader.result as string;
+    };
+    reader.readAsDataURL(file);
+  });
+}
 
 export const ProductManager: React.FC = () => {
   const { products, currentProducer, saveProduct, deleteProduct } = useApp();
@@ -22,6 +49,18 @@ export const ProductManager: React.FC = () => {
   const editingProduct = producerProducts.find(p => p.id === selectedProductId) || activeProductList[0];
 
   const [formData, setFormData] = useState<Product | null>(editingProduct || null);
+  const [imageUploadError, setImageUploadError] = useState<string>('');
+
+  const handleImageUpload = async (file: File | undefined) => {
+    if (!file || !formData) return;
+    setImageUploadError('');
+    try {
+      const dataUrl = await readImageFileAsDataUrl(file);
+      setFormData({ ...formData, images: [dataUrl, ...formData.images.slice(1)] });
+    } catch {
+      setImageUploadError('Bild konnte nicht verarbeitet werden. Bitte JPG/PNG versuchen.');
+    }
+  };
 
   const handleSelectProduct = (prod: Product) => {
     setSelectedProductId(prod.id);
@@ -195,6 +234,29 @@ export const ProductManager: React.FC = () => {
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Produkt löschen</span>
               </button>
+            </div>
+
+            {/* Product Photo */}
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-20 rounded-xl overflow-hidden border border-stone-200 bg-stone-50 shrink-0">
+                {formData.images[0] && (
+                  <img src={formData.images[0]} alt={formData.title} className="w-full h-full object-cover" />
+                )}
+              </div>
+              <div className="space-y-1">
+                <label className="font-mono font-bold text-stone-700 block">Produktfoto</label>
+                <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-stone-100 hover:bg-stone-200 rounded-lg text-xs font-semibold cursor-pointer transition-colors">
+                  <ImageUp className="w-3.5 h-3.5" />
+                  <span>Foto hochladen</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => handleImageUpload(e.target.files?.[0])}
+                  />
+                </label>
+                {imageUploadError && <p className="text-[11px] text-red-600">{imageUploadError}</p>}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">

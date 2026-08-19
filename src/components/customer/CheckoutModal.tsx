@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
 import { DACHCountry, CustomerDetails } from '../../lib/types';
+import { calculateOrderTotals } from '../../lib/pricing';
 import { X, ShieldCheck, Lock, CheckCircle, CreditCard, ArrowRight, AlertCircle, Smartphone, Gift, Snowflake, Send } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -12,13 +13,15 @@ export const CheckoutModal: React.FC = () => {
     createOrderFromCart, createQuoteRequest, clearCart, setCustomerView, getBatchCapacityInfo,
   } = useApp();
 
+  // Deliberately empty — no pre-filled personal data. The customer types
+  // exactly what's needed for this order, nothing is collected by default.
   const [customer, setCustomer] = useState<CustomerDetails>({
-    name: 'Julian Steiner',
-    email: 'julian.steiner@bluewin.ch',
-    phone: '+41 79 123 45 67',
-    street: 'Seestrasse 42',
-    postalCode: '8002',
-    city: 'Zürich',
+    name: '',
+    email: '',
+    phone: '',
+    street: '',
+    postalCode: '',
+    city: '',
     country: 'CH',
   });
 
@@ -38,8 +41,7 @@ export const CheckoutModal: React.FC = () => {
   const effectiveFulfillment = pickupOnly ? 'pickup' : fulfillmentType;
   const capacityInfo = getBatchCapacityInfo(currentProducer.id);
 
-  const taxRate = customer.country === 'CH' ? 0.081 : customer.country === 'DE' ? 0.19 : 0.20;
-  const taxAmount = cartTotal * (taxRate / (1 + taxRate));
+  const orderTotals = calculateOrderTotals(cartTotal, customer.country);
 
   const handleSendQuoteRequest = (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,6 +95,10 @@ export const CheckoutModal: React.FC = () => {
         isGift,
         giftMessage: isGift ? giftMessage : undefined,
         giftRecipient: isGift ? giftRecipient : undefined,
+        subtotal: orderTotals.subtotal,
+        taxRate: orderTotals.taxRate,
+        taxAmount: orderTotals.taxAmount,
+        total: orderTotals.total,
       });
     }, 900);
   };
@@ -275,10 +281,12 @@ export const CheckoutModal: React.FC = () => {
             </div>
           )}
 
-          {/* Customer Address Details */}
+          {/* Customer Details — only what's actually needed is collected. For
+              pickup orders that's name + email; the postal address isn't
+              asked for at all since nothing gets shipped. */}
           <div className="space-y-3">
             <label className="font-mono uppercase font-bold text-stone-700 block">
-              Liefer- & Rechnungsadresse
+              {effectiveFulfillment === 'pickup' ? 'Kontaktdaten für die Abholung' : 'Liefer- & Rechnungsadresse'}
             </label>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -304,37 +312,41 @@ export const CheckoutModal: React.FC = () => {
                 />
               </div>
 
-              <div className="sm:col-span-2">
-                <span className="text-stone-500 block mb-1">Strasse & Hausnummer</span>
-                <input
-                  type="text"
-                  required
-                  value={customer.street}
-                  onChange={(e) => setCustomer(prev => ({ ...prev, street: e.target.value }))}
-                  className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs font-medium"
-                />
-              </div>
+              {effectiveFulfillment === 'shipping' && (
+                <>
+                  <div className="sm:col-span-2">
+                    <span className="text-stone-500 block mb-1">Strasse & Hausnummer</span>
+                    <input
+                      type="text"
+                      required
+                      value={customer.street}
+                      onChange={(e) => setCustomer(prev => ({ ...prev, street: e.target.value }))}
+                      className="w-full px-3 py-2 border border-stone-300 rounded-lg text-xs font-medium"
+                    />
+                  </div>
 
-              <div>
-                <span className="text-stone-500 block mb-1">PLZ & Ort</span>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    required
-                    style={{ width: '80px' }}
-                    value={customer.postalCode}
-                    onChange={(e) => setCustomer(prev => ({ ...prev, postalCode: e.target.value }))}
-                    className="px-3 py-2 border border-stone-300 rounded-lg text-xs font-medium"
-                  />
-                  <input
-                    type="text"
-                    required
-                    value={customer.city}
-                    onChange={(e) => setCustomer(prev => ({ ...prev, city: e.target.value }))}
-                    className="flex-1 px-3 py-2 border border-stone-300 rounded-lg text-xs font-medium"
-                  />
-                </div>
-              </div>
+                  <div>
+                    <span className="text-stone-500 block mb-1">PLZ & Ort</span>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        required
+                        style={{ width: '80px' }}
+                        value={customer.postalCode}
+                        onChange={(e) => setCustomer(prev => ({ ...prev, postalCode: e.target.value }))}
+                        className="px-3 py-2 border border-stone-300 rounded-lg text-xs font-medium"
+                      />
+                      <input
+                        type="text"
+                        required
+                        value={customer.city}
+                        onChange={(e) => setCustomer(prev => ({ ...prev, city: e.target.value }))}
+                        className="flex-1 px-3 py-2 border border-stone-300 rounded-lg text-xs font-medium"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div>
                 <span className="text-stone-500 block mb-1">Land</span>
@@ -445,8 +457,8 @@ export const CheckoutModal: React.FC = () => {
               <span className="font-mono">{currentProducer.currency} {cartTotal.toFixed(2)}</span>
             </div>
             <div className="flex justify-between text-stone-600">
-              <span>Inklusive MwSt. ({customer.country}: {(taxRate * 100).toFixed(1)}%)</span>
-              <span className="font-mono">{currentProducer.currency} {taxAmount.toFixed(2)}</span>
+              <span>Inklusive MwSt. ({customer.country}: {(orderTotals.taxRate * 100).toFixed(1)}%)</span>
+              <span className="font-mono">{currentProducer.currency} {orderTotals.taxAmount.toFixed(2)}</span>
             </div>
             <div className="flex justify-between font-bold text-stone-900 text-base pt-2 border-t border-stone-100">
               <span>Zu zahlender Gesamtbetrag</span>

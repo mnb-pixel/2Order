@@ -19,12 +19,13 @@ export const ProducerOnboardingModal: React.FC = () => {
   const [batchScheduleNotice, setBatchScheduleNotice] = useState('Nächste Charge: Dienstag 08:00');
   const [contactEmail, setContactEmail] = useState('info@atelier-manufaktur.ch');
   const [heroImage] = useState('https://images.unsplash.com/photo-1514432324607-a09d9b4aefdd?auto=format&fit=crop&w=1200&q=80');
+  const [portalPin, setPortalPin] = useState('');
 
   if (!isOnboardingOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim()) return;
+    if (!name.trim() || !/^\d{4,6}$/.test(portalPin)) return;
 
     createProducer({
       name,
@@ -41,6 +42,7 @@ export const ProducerOnboardingModal: React.FC = () => {
       contactEmail,
       heroImage,
       logoText: `${name.toUpperCase()} · ${city.toUpperCase()}`,
+      portalPin,
     });
 
     setIsOnboardingOpen(false);
@@ -216,6 +218,26 @@ export const ProducerOnboardingModal: React.FC = () => {
                 />
               </div>
             </div>
+          </div>
+
+          {/* Step 3: Portal Access */}
+          <div className="space-y-3 pt-2">
+            <h3 className="font-mono uppercase font-bold text-stone-800 text-xs border-b border-stone-200 pb-1">
+              3. PORTAL-ZUGRIFFSCODE
+            </h3>
+            <p className="text-[11px] text-stone-500">
+              Ein 4–6-stelliger Code, mit dem Sie das Produzenten-Portal dieses Gewerbes künftig entsperren. Bewahren Sie ihn sicher auf — dies ist ein einfacher Zugriffsschutz, kein vollständiges Login-System.
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              required
+              pattern="\d{4,6}"
+              placeholder="z.B. 4711"
+              value={portalPin}
+              onChange={(e) => setPortalPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              className="w-40 px-3 py-2 border border-stone-300 rounded-lg text-xs font-mono font-bold tracking-widest"
+            />
           </div>
 
           {/* Submit */}

@@ -91,6 +91,12 @@ export const RequestsTracker: React.FC = () => {
                   </div>
                 )}
 
+                {quote.status === 'accepted' && (
+                  <div className="pt-2 border-t border-stone-100 text-xs text-stone-600">
+                    Angenommen zu <strong className="font-mono text-stone-900">{quote.currency} {quote.quotedPrice?.toFixed(2)}</strong> — die Manufaktur stellt Ihnen in Kürze die Rechnung aus.
+                  </div>
+                )}
+
                 {invoice && (
                   <div className="pt-3 border-t border-stone-100 bg-stone-50 rounded-xl p-4 space-y-1.5">
                     <div className="flex items-center gap-2 text-xs font-mono font-bold text-stone-800">

@@ -7,8 +7,14 @@ const COLUMNS: Array<{ id: OrderStatus; label: string; color: string; badgeBg: s
   { id: 'paid', label: 'Eingang / Bezahlt', color: 'border-amber-500', badgeBg: 'bg-amber-100 text-amber-900' },
   { id: 'in_production', label: 'In Röstung / Produktion', color: 'border-atelier-terracotta', badgeBg: 'bg-orange-100 text-orange-900' },
   { id: 'labeling', label: 'Etikettierung & Endkontrolle', color: 'border-blue-500', badgeBg: 'bg-blue-100 text-blue-900' },
-  { id: 'ready_for_pickup', label: 'Versandbereit / Bereit', color: 'border-emerald-500', badgeBg: 'bg-emerald-100 text-emerald-900' },
+  { id: 'ready_for_pickup', label: 'Bereit zur Übergabe', color: 'border-emerald-500', badgeBg: 'bg-emerald-100 text-emerald-900' },
 ];
+
+// The order's final pre-completion status depends on how it leaves the atelier —
+// picked up in person vs. handed to a carrier — so "labeling" never advances
+// into the wrong one of the two.
+const finalHandoverStatus = (order: Order): OrderStatus =>
+  order.fulfillmentType === 'pickup' ? 'ready_for_pickup' : 'shipped';
 
 export const ProductionQueueKDS: React.FC = () => {
   const { orders, currentProducer, updateOrderStatus, setPrintSlipOrder } = useApp();
@@ -34,10 +40,11 @@ export const ProductionQueueKDS: React.FC = () => {
         updateOrderStatus(order.id, 'labeling');
         break;
       case 'labeling':
-        updateOrderStatus(order.id, 'ready_for_pickup');
+        updateOrderStatus(order.id, finalHandoverStatus(order));
         break;
       case 'ready_for_pickup':
-        updateOrderStatus(order.id, 'shipped');
+      case 'shipped':
+        updateOrderStatus(order.id, 'completed');
         break;
     }
   };
@@ -53,6 +60,9 @@ export const ProductionQueueKDS: React.FC = () => {
       case 'ready_for_pickup':
       case 'shipped':
         updateOrderStatus(order.id, 'labeling');
+        break;
+      case 'completed':
+        updateOrderStatus(order.id, finalHandoverStatus(order));
         break;
     }
   };
@@ -200,12 +210,16 @@ export const ProductionQueueKDS: React.FC = () => {
                           Laufzettel
                         </button>
 
-                        {order.status !== 'shipped' && order.status !== 'completed' ? (
+                        {order.status !== 'completed' ? (
                           <button
                             onClick={() => handleNextStatus(order)}
                             className="flex-1 py-1.5 px-2 bg-stone-900 hover:bg-stone-800 text-white rounded text-[11px] font-medium flex items-center justify-center gap-1 transition-colors"
                           >
-                            <span>Weiter</span>
+                            <span>
+                              {(order.status === 'ready_for_pickup' || order.status === 'shipped')
+                                ? (order.fulfillmentType === 'pickup' ? 'Als abgeholt bestätigen' : 'Als zugestellt bestätigen')
+                                : 'Weiter'}
+                            </span>
                             <ArrowRight className="w-3 h-3" />
                           </button>
                         ) : (

@@ -3,7 +3,7 @@ import { useApp } from '../../lib/store';
 import { Send, CheckCircle2, Receipt, ShieldCheck } from 'lucide-react';
 
 export const QuoteManager: React.FC = () => {
-  const { quotes, invoices, currentProducer, respondToQuote, declineQuote, markInvoicePaid } = useApp();
+  const { quotes, invoices, currentProducer, respondToQuote, declineQuote, issueInvoice, markInvoicePaid } = useApp();
   const [priceDrafts, setPriceDrafts] = useState<Record<string, string>>({});
   const [noteDrafts, setNoteDrafts] = useState<Record<string, string>>({});
 
@@ -111,6 +111,21 @@ export const QuoteManager: React.FC = () => {
                     Offeriert: <strong className="text-stone-900 font-mono">{quote.currency} {quote.quotedPrice?.toFixed(2)}</strong>
                     {quote.quotedNote && <span> · {quote.quotedNote}</span>}
                     <span className="block text-[11px] text-stone-400 mt-1">Wartet auf Annahme durch den Kunden.</span>
+                  </div>
+                )}
+
+                {quote.status === 'accepted' && (
+                  <div className="pt-2 border-t border-stone-100 flex items-center justify-between gap-2">
+                    <div className="text-xs text-stone-600">
+                      Angenommen zu <strong className="text-stone-900 font-mono">{quote.currency} {quote.quotedPrice?.toFixed(2)}</strong>
+                    </div>
+                    <button
+                      onClick={() => issueInvoice(quote.id)}
+                      className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-lg text-xs font-bold flex items-center gap-1.5"
+                    >
+                      <Receipt className="w-3.5 h-3.5" />
+                      <span>Rechnung erstellen</span>
+                    </button>
                   </div>
                 )}
 

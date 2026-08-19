@@ -2,7 +2,7 @@ import React, { useState, useMemo } from 'react';
 import { useApp } from '../../lib/store';
 import { RecipeItem, CustomLabelData } from '../../lib/types';
 import { generateLabelSvg } from '../../lib/labelRenderer';
-import { ALLERGEN_LABELS } from '../../lib/allergens';
+import { ALLERGEN_LABELS, aggregateAllergens } from '../../lib/allergens';
 import { ArrowLeft, Check, ShoppingBag, Eye, SlidersHorizontal, Layers, AlertTriangle, Bookmark } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
@@ -30,13 +30,21 @@ export const BlendCustomizer: React.FC = () => {
 
   const hasRecipeStep = components.length > 0;
 
-  // Initialize ratios evenly distributed to sum to 100% (or target total)
+// A component that is out of stock can never receive an allocation — not on
+  // initial load, and not as a target for redistribution when other sliders move.
+  const isComponentOutOfStock = (comp: (typeof components)[number]) =>
+    !comp.inStock || (comp.stockQuantity !== undefined && comp.stockQuantity <= 0);
+
+  // Initialize ratios evenly distributed across in-stock components only, to
+  // sum to 100% (or target total). Out-of-stock components always start at 0.
   const [ratios, setRatios] = useState<Record<string, number>>(() => {
     const initial: Record<string, number> = {};
-    const count = components.length;
+    const available = components.filter(c => !isComponentOutOfStock(c));
+    components.forEach(c => { initial[c.id] = 0; });
+    const count = available.length;
     if (count === 0) return initial;
     let remaining = config.targetTotal || 100;
-    components.forEach((c, idx) => {
+    available.forEach((c, idx) => {
       if (idx === count - 1) {
         initial[c.id] = remaining;
       } else {
@@ -82,21 +90,41 @@ export const BlendCustomizer: React.FC = () => {
 
   // Multi-Slider 100% Lock Redistribution Algorithm
   const handleRatioChange = (changedId: string, rawNewValue: number) => {
-    const targetVal = Math.max(0, Math.min(config.targetTotal || 100, Math.round(rawNewValue)));
+    const changedComp = components.find(c => c.id === changedId);
+    if (!changedComp || isComponentOutOfStock(changedComp)) return;
+
+    const perComponentMax = Math.min(config.targetTotal || 100, changedComp.maxRatio ?? (config.targetTotal || 100));
+    const targetVal = Math.max(0, Math.min(perComponentMax, Math.round(rawNewValue)));
     const oldVal = ratios[changedId] || 0;
     const diff = targetVal - oldVal;
 
     if (diff === 0) return;
 
     if (config.sliderMode !== 'percentage_100') {
+      // Build-a-box has an inclusive total (e.g. "3 Kugeln") — the sum across
+      // all components may never exceed it, only individual sliders are capped.
+      if (config.archetype === 'build_a_box') {
+        const sumOthers = components
+          .filter(c => c.id !== changedId)
+          .reduce((sum, c) => sum + (ratios[c.id] || 0), 0);
+        const cappedVal = Math.max(0, Math.min(targetVal, (config.targetTotal || 100) - sumOthers));
+        setRatios({ ...ratios, [changedId]: cappedVal });
+        return;
+      }
       setRatios({ ...ratios, [changedId]: targetVal });
       return;
     }
 
-    const otherIds = components.filter(c => c.id !== changedId).map(c => c.id);
+    // Out-of-stock components never receive a redistributed share — they stay at 0.
+    const otherIds = components
+      .filter(c => c.id !== changedId && !isComponentOutOfStock(c))
+      .map(c => c.id);
     const sumOthers = otherIds.reduce((sum, id) => sum + (ratios[id] || 0), 0);
 
     const newRatios: Record<string, number> = { ...ratios, [changedId]: targetVal };
+    components.forEach(c => {
+      if (c.id !== changedId && isComponentOutOfStock(c)) newRatios[c.id] = 0;
+    });
 
     if (sumOthers === 0) {
       const remainder = (config.targetTotal || 100) - targetVal;
@@ -178,19 +206,10 @@ export const BlendCustomizer: React.FC = () => {
 
   // Aggregate declaration-relevant allergens from fixed product allergens,
   // the currently selected recipe components, and chosen custom field choices.
-  const activeAllergens = useMemo(() => {
-    const set = new Set<string>();
-    (activeProduct.allergens || []).forEach(a => set.add(a));
-    components.forEach(c => {
-      if ((ratios[c.id] || 0) > 0) (c.allergens || []).forEach(a => set.add(a));
-    });
-    customFields.forEach(f => {
-      const val = fieldValues[f.key];
-      const matched = f.choices?.find(c => c.value === val);
-      (matched?.allergens || []).forEach(a => set.add(a));
-    });
-    return Array.from(set) as (keyof typeof ALLERGEN_LABELS)[];
-  }, [activeProduct.allergens, components, ratios, customFields, fieldValues]);
+  const activeAllergens = useMemo(
+    () => aggregateAllergens(activeProduct, calculatedRecipe, fieldValues),
+    [activeProduct, calculatedRecipe, fieldValues]
+  );
 
   // Generate real-time SVG for preview
   const renderedSvg = useMemo(() => {
@@ -371,7 +390,13 @@ export const BlendCustomizer: React.FC = () => {
                 </div>
                 <div className="flex justify-between text-[10px] font-mono text-stone-500">
                   <span>Gesamt: {config.targetTotal}{config.targetUnit}</span>
-                  <span>{totalWeightGrams} Gramm Frischmenge</span>
+                  {config.archetype === 'build_a_box' ? (
+                    <span>
+                      Verbleibend: {Math.max(0, (config.targetTotal || 0) - components.reduce((s, c) => s + (ratios[c.id] || 0), 0))}{config.targetUnit}
+                    </span>
+                  ) : (
+                    <span>{totalWeightGrams} Gramm Frischmenge</span>
+                  )}
                 </div>
               </div>
 
@@ -380,7 +405,8 @@ export const BlendCustomizer: React.FC = () => {
                 {components.map(comp => {
                   const ratio = ratios[comp.id] || 0;
                   const grams = Math.round((ratio / (config.targetTotal || 100)) * totalWeightGrams);
-                  const isOutOfStock = !comp.inStock || (comp.stockQuantity !== undefined && comp.stockQuantity <= 0);
+                  const isOutOfStock = isComponentOutOfStock(comp);
+                  const sliderMax = Math.min(config.targetTotal || 100, comp.maxRatio ?? (config.targetTotal || 100));
 
                   return (
                     <div
@@ -425,8 +451,8 @@ export const BlendCustomizer: React.FC = () => {
                       <input
                         type="range"
                         min="0"
-                        max={config.targetTotal || 100}
-                        step="5"
+                        max={sliderMax}
+                        step={config.sliderMode === 'percentage_100' ? 5 : 1}
                         value={isOutOfStock ? 0 : ratio}
                         disabled={isOutOfStock}
                         onChange={(e) => handleRatioChange(comp.id, parseInt(e.target.value, 10))}

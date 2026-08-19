@@ -329,7 +329,7 @@ export const DynamicCanvasBuilder: React.FC<DynamicCanvasBuilderProps> = ({ prod
                 </div>
 
                 {/* Inventory & Cost row */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 border-t border-stone-100 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 pt-2 border-t border-stone-100 text-xs">
                   <div>
                     <label className="font-mono text-stone-600 block mb-1 font-bold flex items-center gap-1">
                       <Package className="w-3 h-3 text-atelier-terracotta" /> Lagerbestand ({comp.unitText || config.targetUnit})
@@ -340,6 +340,18 @@ export const DynamicCanvasBuilder: React.FC<DynamicCanvasBuilderProps> = ({ prod
                       value={comp.stockQuantity ?? ''}
                       placeholder="unbegrenzt"
                       onChange={(e) => handleUpdateComponent(comp.id, { stockQuantity: e.target.value === '' ? undefined : parseInt(e.target.value, 10) || 0 })}
+                      className="w-full px-3 py-1.5 border border-stone-300 rounded-lg font-mono text-xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="font-mono text-stone-600 block mb-1 font-bold">Max. je Bestellung ({comp.unitText || config.targetUnit})</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max={config.targetTotal || 100}
+                      value={comp.maxRatio}
+                      placeholder={String(config.targetTotal || 100)}
+                      onChange={(e) => handleUpdateComponent(comp.id, { maxRatio: Math.max(0, Math.min(config.targetTotal || 100, parseInt(e.target.value, 10) || 0)) })}
                       className="w-full px-3 py-1.5 border border-stone-300 rounded-lg font-mono text-xs"
                     />
                   </div>

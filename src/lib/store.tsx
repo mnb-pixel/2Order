@@ -4,6 +4,8 @@ import {
   Review, SavedRecipe, CustomerDetails,
 } from './types';
 import { SEED_PRODUCERS, SEED_PRODUCTS, INITIAL_ORDERS } from '../db/seed';
+import { calculateOrderTotals } from './pricing';
+import { aggregateAllergens } from './allergens';
 
 interface BatchCapacityInfo {
   capacity: number | null; // null = unbegrenzt
@@ -35,6 +37,12 @@ interface AppContextType {
   myProducerIds: string[];
   myProducers: Producer[];
 
+  // Lightweight, client-side access gate for the Produzenten-Portal (see the
+  // caveat on Producer.portalPin — this deters accidental/casual access on a
+  // shared device, it is not real authentication).
+  isPortalUnlocked: (producerId: string) => boolean;
+  unlockPortal: (producerId: string, pin: string) => boolean;
+
   // New Business Onboarding
   createProducer: (producerData: Omit<Producer, 'id' | 'slug' | 'stripeConnected'>) => Producer;
   updateProducer: (id: string, updates: Partial<Producer>) => void;
@@ -61,7 +69,8 @@ interface AppContextType {
   // Quote / Offerte -> Rechnung flow (platform never touches this money)
   createQuoteRequest: (items: QuoteRequestItem[], customer: CustomerDetails, producer: Producer, customerNote?: string) => Quote;
   respondToQuote: (quoteId: string, price: number, note?: string) => void;
-  acceptQuote: (quoteId: string) => Invoice;
+  acceptQuote: (quoteId: string) => void;
+  issueInvoice: (quoteId: string) => Invoice;
   declineQuote: (quoteId: string) => void;
   markInvoicePaid: (invoiceId: string) => void;
   activeQuote: Quote | null;
@@ -180,8 +189,31 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [customerView, setCustomerView] = useState<AppContextType['customerView']>('discover');
   const [activeProduct, setActiveProduct] = useState<Product | null>(products[0] || null);
   const [infoProduct, setInfoProduct] = useState<Product | null>(null);
-  const [activeOrder, setActiveOrder] = useState<Order | null>(null);
+  // The active order is persisted by id (not by value) so a page reload can
+  // restore "my current order" without falling back to whatever the most
+  // recently placed order on this device happens to be — that could belong
+  // to a different customer on a shared device.
+  const [activeOrderId, setActiveOrderIdState] = useState<string | null>(() =>
+    localStorage.getItem(`${LOCAL_STORAGE_KEY}_active_order_id`)
+  );
+  const setActiveOrder = (order: Order | null) => {
+    setActiveOrderIdState(order?.id || null);
+    if (order) localStorage.setItem(`${LOCAL_STORAGE_KEY}_active_order_id`, order.id);
+    else localStorage.removeItem(`${LOCAL_STORAGE_KEY}_active_order_id`);
+  };
   const [activeQuote, setActiveQuote] = useState<Quote | null>(null);
+
+  // Portal unlock state lives in sessionStorage (not localStorage): it should
+  // require re-entering the PIN in a fresh browser session, but not on every
+  // navigation within the same one.
+  const [unlockedProducerIds, setUnlockedProducerIds] = useState<string[]>(() => {
+    try {
+      const saved = sessionStorage.getItem('atelier_portal_unlocked_ids');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isCartOpen, setIsCartOpen] = useState<boolean>(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState<boolean>(false);
   const [printSlipOrder, setPrintSlipOrder] = useState<Order | null>(null);
@@ -224,9 +256,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     localStorage.setItem(`${LOCAL_STORAGE_KEY}_my_producer_ids`, JSON.stringify(myProducerIds));
   }, [myProducerIds]);
 
+  useEffect(() => {
+    sessionStorage.setItem('atelier_portal_unlocked_ids', JSON.stringify(unlockedProducerIds));
+  }, [unlockedProducerIds]);
+
   // Current producer object
   const currentProducer = producers.find(p => p.id === selectedProducerId) || producers[0];
   const myProducers = producers.filter(p => myProducerIds.includes(p.id));
+  // Derived (not stored by value) so it always reflects live status updates.
+  const activeOrder = orders.find(o => o.id === activeOrderId) || null;
 
   // Switching into the Produzenten-Portal must never land the user in another
   // manufacturer's workspace just because they were browsing that Atelier as a
@@ -252,11 +290,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setProducers(prev => [newProducer, ...prev]);
     setMyProducerIds(prev => [newId, ...prev]);
     setSelectedProducerId(newId);
+    setUnlockedProducerIds(prev => [newId, ...prev]); // creator just chose this PIN themselves
     return newProducer;
   };
 
   const updateProducer = (id: string, updates: Partial<Producer>) => {
     setProducers(prev => prev.map(p => p.id === id ? { ...p, ...updates } : p));
+  };
+
+  const isPortalUnlocked = (producerId: string) => unlockedProducerIds.includes(producerId);
+
+  const unlockPortal = (producerId: string, pin: string): boolean => {
+    const producer = producers.find(p => p.id === producerId);
+    if (!producer || pin.trim() === '' || producer.portalPin !== pin.trim()) return false;
+    setUnlockedProducerIds(prev => prev.includes(producerId) ? prev : [...prev, producerId]);
+    return true;
   };
 
   // Cart Actions
@@ -311,9 +359,10 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const createOrderFromCart = (orderData: Partial<Order>): Order => {
     const newOrderNumber = `ATL-2026-${Math.floor(1000 + Math.random() * 9000)}`;
     const producer = cart[0]?.producer || currentProducer;
-    const subtotal = cartTotal;
-    const taxRate = producer.country === 'CH' ? 0.081 : producer.country === 'DE' ? 0.19 : 0.20;
-    const taxAmount = subtotal * taxRate;
+    // Destination-country VAT split (same formula the checkout screen used to
+    // show the customer) so the persisted order always matches what was
+    // actually displayed and charged — never recomputed differently here.
+    const totals = calculateOrderTotals(cartTotal, orderData.customer?.country || producer.country);
 
     const newOrder: Order = {
       id: `ord-${Date.now()}`,
@@ -342,14 +391,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         customLabel: ci.customLabel,
         renderedLabelSvg: ci.renderedLabelSvg,
         lotNumber: generateLotNumber(producer),
-        allergens: ci.product.allergens,
+        allergens: aggregateAllergens(ci.product, ci.recipe, ci.customFieldValues),
       })),
       status: 'paid',
       currency: producer.currency,
-      subtotal: Number(subtotal.toFixed(2)),
-      taxRate: taxRate,
-      taxAmount: Number(taxAmount.toFixed(2)),
-      total: Number(subtotal.toFixed(2)),
+      subtotal: totals.subtotal,
+      taxRate: totals.taxRate,
+      taxAmount: totals.taxAmount,
+      total: totals.total,
       fulfillmentType: orderData.fulfillmentType || 'shipping',
       paymentMethod: orderData.paymentMethod || 'twint',
       paymentStatus: 'paid',
@@ -368,9 +417,6 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   const updateOrderStatus = (orderId: string, newStatus: OrderStatus) => {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
-    if (activeOrder && activeOrder.id === orderId) {
-      setActiveOrder(prev => prev ? { ...prev, status: newStatus } : null);
-    }
   };
 
   const getBatchCapacityInfo = (producerId: string): BatchCapacityInfo => {
@@ -428,7 +474,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status: 'declined' } : q));
   };
 
-  const acceptQuote = (quoteId: string): Invoice => {
+  // Customer accepts the producer's offer. This only records intent — the
+  // producer still has to issue the actual invoice (issueInvoice below).
+  const acceptQuote = (quoteId: string) => {
+    setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status: 'accepted' } : q));
+    if (activeQuote && activeQuote.id === quoteId) {
+      setActiveQuote(prev => prev ? { ...prev, status: 'accepted' } : null);
+    }
+  };
+
+  // Producer issues the invoice for an accepted quote (e.g. as a Swiss-QR-Rechnung).
+  const issueInvoice = (quoteId: string): Invoice => {
     const quote = quotes.find(q => q.id === quoteId);
     setQuotes(prev => prev.map(q => q.id === quoteId ? { ...q, status: 'invoiced' } : q));
 
@@ -493,6 +549,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         currentProducer,
         myProducerIds,
         myProducers,
+        isPortalUnlocked,
+        unlockPortal,
         createProducer,
         updateProducer,
         cart,
@@ -511,6 +569,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         createQuoteRequest,
         respondToQuote,
         acceptQuote,
+        issueInvoice,
         declineQuote,
         markInvoicePaid,
         activeQuote,

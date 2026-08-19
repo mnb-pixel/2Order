@@ -1,24 +1,42 @@
 import React, { useState } from 'react';
 import { useApp } from '../../lib/store';
-import { CheckCircle2, Clock, Package, Truck, ArrowLeft, Sliders, ShieldCheck, QrCode, AlertTriangle, Gift, Star } from 'lucide-react';
+import { CheckCircle2, Clock, Package, Truck, Home, ArrowLeft, Sliders, ShieldCheck, QrCode, AlertTriangle, Gift, Star } from 'lucide-react';
 import { OrderStatus } from '../../lib/types';
 import { generateTraceabilityQrSvg } from '../../lib/labelRenderer';
 import { ALLERGEN_LABELS } from '../../lib/allergens';
 
-const STATUS_STEPS: Array<{ id: OrderStatus; label: string; description: string; icon: any }> = [
-  { id: 'paid', label: 'Bezahlt & Eingeplant', description: 'Rezeptur an Werkstatt übermittelt', icon: CheckCircle2 },
-  { id: 'in_production', label: 'In Röstung / Produktion', description: 'Frisch nach Mass eingewogen & verarbeitet', icon: Clock },
-  { id: 'labeling', label: 'Etikettierung & Endkontrolle', description: 'Vektor-Etikett gedruckt & appliziert', icon: Package },
-  { id: 'shipped', label: 'Versendet / Bereit', description: 'Unterwegs zu Ihnen mit Frischegarantie', icon: Truck },
-];
+type StatusStep = { id: OrderStatus; label: string; description: string; icon: any };
+
+// Pickup and shipped orders diverge from "labeling" onward — a pickup order
+// is never "unterwegs", so the copy branches on fulfillmentType instead of
+// forcing shipping language onto every order.
+function getStatusSteps(fulfillmentType: 'shipping' | 'pickup'): StatusStep[] {
+  const base: StatusStep[] = [
+    { id: 'paid', label: 'Bezahlt & Eingeplant', description: 'Rezeptur an Werkstatt übermittelt', icon: CheckCircle2 },
+    { id: 'in_production', label: 'In Röstung / Produktion', description: 'Frisch nach Mass eingewogen & verarbeitet', icon: Clock },
+    { id: 'labeling', label: 'Etikettierung & Endkontrolle', description: 'Vektor-Etikett gedruckt & appliziert', icon: Package },
+  ];
+  if (fulfillmentType === 'pickup') {
+    return [
+      ...base,
+      { id: 'ready_for_pickup', label: 'Abholbereit', description: 'Frisch verpackt & bereit im Atelier', icon: Home },
+      { id: 'completed', label: 'Abgeholt', description: 'Vielen Dank für Ihren Besuch', icon: CheckCircle2 },
+    ];
+  }
+  return [
+    ...base,
+    { id: 'shipped', label: 'Versendet', description: 'Unterwegs zu Ihnen mit Frischegarantie', icon: Truck },
+    { id: 'completed', label: 'Zugestellt', description: 'Bestellung erfolgreich zugestellt', icon: CheckCircle2 },
+  ];
+}
 
 export const OrderTracker: React.FC = () => {
-  const { activeOrder, orders, setCustomerView, setMode, addReview } = useApp();
+  const { activeOrder, setCustomerView, setMode, addReview } = useApp();
   const [reviewRating, setReviewRating] = useState<number>(5);
   const [reviewComment, setReviewComment] = useState<string>('');
   const [reviewSubmitted, setReviewSubmitted] = useState<boolean>(false);
 
-  const currentOrder = activeOrder || orders[0];
+  const currentOrder = activeOrder;
 
   if (!currentOrder) {
     return (
@@ -34,14 +52,16 @@ export const OrderTracker: React.FC = () => {
     );
   }
 
+  const STATUS_STEPS = getStatusSteps(currentOrder.fulfillmentType);
+
   const getStepIndex = (status: OrderStatus) => {
     switch (status) {
       case 'paid': return 0;
       case 'in_production': return 1;
       case 'labeling': return 2;
       case 'ready_for_pickup':
-      case 'shipped':
-      case 'completed': return 3;
+      case 'shipped': return 3;
+      case 'completed': return 4;
       default: return 0;
     }
   };
@@ -241,8 +261,8 @@ export const OrderTracker: React.FC = () => {
         ))}
       </div>
 
-      {/* Review Form (once shipped/completed) */}
-      {(currentOrder.status === 'shipped' || currentOrder.status === 'completed') && (
+      {/* Review Form (once fully completed — delivered or picked up) */}
+      {currentOrder.status === 'completed' && (
         <div className="bg-white border border-stone-200 rounded-2xl p-6 shadow-swiss space-y-4">
           <h2 className="text-xs uppercase tracking-widest font-mono font-bold text-stone-700">
             WIE WAR IHRE ERFAHRUNG MIT {currentOrder.producerName.toUpperCase()}?

@@ -20,6 +20,7 @@ export const SEED_PRODUCERS: Producer[] = [
     establishedYear: 2021,
     contactEmail: 'roastmaster@maelstrom.ch',
     capacityPerBatch: 40,
+    portalPin: '1001',
   },
   {
     id: 'prod-aarau-hops',
@@ -40,6 +41,7 @@ export const SEED_PRODUCERS: Producer[] = [
     establishedYear: 2019,
     contactEmail: 'brauerei@aarauhops.ch',
     capacityPerBatch: 25,
+    portalPin: '1002',
   },
   {
     id: 'prod-cacao-basel',
@@ -60,6 +62,7 @@ export const SEED_PRODUCERS: Producer[] = [
     establishedYear: 2022,
     contactEmail: 'atelier@cacao-basel.ch',
     capacityPerBatch: 30,
+    portalPin: '1003',
   },
   {
     id: 'prod-gletscher-gelato',
@@ -80,6 +83,7 @@ export const SEED_PRODUCERS: Producer[] = [
     establishedYear: 2023,
     contactEmail: 'ciao@gletscher-gelato.ch',
     capacityPerBatch: 60,
+    portalPin: '1004',
   },
   {
     id: 'prod-zopf-zeit',
@@ -99,6 +103,7 @@ export const SEED_PRODUCERS: Producer[] = [
     batchScheduleNotice: 'Backtag nach individueller Terminvereinbarung',
     establishedYear: 2018,
     contactEmail: 'atelier@zopf-zeit.ch',
+    portalPin: '1005',
   },
 ];
 

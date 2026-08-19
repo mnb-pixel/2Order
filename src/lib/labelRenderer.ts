@@ -90,7 +90,7 @@ export function generateLabelSvg(options: LabelRenderOptions): string {
 
       <!-- Producer Logo & Category Seal -->
       <text x="45" y="60" font-size="14" font-weight="700" fill="#111111" letter-spacing="0.18em" font-family="'Inter', sans-serif">
-        ✦ ${producerName.toUpperCase()}
+        ✦ ${escapeXml(producerName.toUpperCase())}
       </text>
 
       <rect x="630" y="42" width="115" height="26" fill="#111111" rx="2" />

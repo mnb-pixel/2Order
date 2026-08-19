@@ -29,6 +29,12 @@ export interface Producer {
   establishedYear: number;
   contactEmail: string;
   capacityPerBatch?: number; // max Made-to-Order Positionen pro Fertigungscharge
+  // Lightweight access code gating the Produzenten-Portal for this Gewerbe.
+  // This is a client-side deterrent against casually switching into another
+  // business's workspace on a shared device/browser — NOT a substitute for
+  // real server-side authentication, since it's enforced entirely in the
+  // browser and the value itself lives in the same unauthenticated storage.
+  portalPin: string;
 }
 
 // MARK: - Dynamic Producer-Defined Sliders
