@@ -11,9 +11,9 @@ enum CraftCategory: String, CaseIterable, Codable, Identifiable {
     case bakery = "bakery"
     case tea = "tea"
     case deli = "deli"
-    
+
     var id: String { rawValue }
-    
+
     var displayName: String {
         switch self {
         case .coffee: return "Röstereien"
@@ -26,7 +26,7 @@ enum CraftCategory: String, CaseIterable, Codable, Identifiable {
         case .deli: return "Feinkost"
         }
     }
-    
+
     var iconName: String {
         switch self {
         case .coffee: return "cup.and.saucer.fill"
@@ -41,11 +41,13 @@ enum CraftCategory: String, CaseIterable, Codable, Identifiable {
     }
 }
 
-enum DACHCountry: String, Codable {
+enum DACHCountry: String, Codable, CaseIterable {
     case ch = "CH"
     case de = "DE"
     case at = "AT"
-    
+
+    // Single source of truth for the VAT split — used identically for the
+    // checkout preview and the persisted order so the two can never diverge.
     var vatRate: Double {
         switch self {
         case .ch: return 0.081
@@ -53,17 +55,52 @@ enum DACHCountry: String, Codable {
         case .at: return 0.20
         }
     }
-    
+
     var currency: String {
         switch self {
         case .ch: return "CHF"
         case .de, .at: return "EUR"
         }
     }
+
+    var displayName: String {
+        switch self {
+        case .ch: return "Schweiz"
+        case .de: return "Deutschland"
+        case .at: return "Österreich"
+        }
+    }
+}
+
+// MARK: - Allergens (EU/CH LMIV / LIV — 14 declarable allergens)
+enum AllergenCode: String, Codable, CaseIterable, Identifiable {
+    case gluten, crustaceans, eggs, fish, peanuts, soy, milk, nuts
+    case celery, mustard, sesame, sulfites, lupin, molluscs
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .gluten: return "Glutenhaltiges Getreide"
+        case .crustaceans: return "Krebstiere"
+        case .eggs: return "Eier"
+        case .fish: return "Fisch"
+        case .peanuts: return "Erdnüsse"
+        case .soy: return "Soja"
+        case .milk: return "Milch/Laktose"
+        case .nuts: return "Schalenfrüchte"
+        case .celery: return "Sellerie"
+        case .mustard: return "Senf"
+        case .sesame: return "Sesam"
+        case .sulfites: return "Sulfite"
+        case .lupin: return "Lupinen"
+        case .molluscs: return "Weichtiere"
+        }
+    }
 }
 
 // MARK: - Producer Model (Gewerbe)
-struct Producer: Identifiable, Codable {
+struct Producer: Identifiable, Codable, Equatable {
     let id: String
     var name: String
     var tagline: String
@@ -78,6 +115,14 @@ struct Producer: Identifiable, Codable {
     var batchScheduleNotice: String
     var establishedYear: Int
     var contactEmail: String
+    var capacityPerBatch: Int? // max offene MTO-Aufträge pro Fertigungscharge; nil = unbegrenzt
+    // Lightweight access code gating this Gewerbe's Werkstatt-Portal — a
+    // client-side deterrent against casually switching into another
+    // business's workspace on a shared device, NOT real authentication
+    // (there is no backend/account system in this app).
+    var portalPin: String
+
+    static func == (lhs: Producer, rhs: Producer) -> Bool { lhs.id == rhs.id }
 }
 
 // MARK: - Dynamic Blend Component
@@ -89,26 +134,36 @@ struct BlendComponent: Identifiable, Codable, Equatable {
     var notes: [String]
     var priceMultiplier: Double
     var hexColor: String
+    var maxRatio: Double // per-component cap, in the config's target unit
+    var inStock: Bool
+    var stockQuantity: Int? // nil = unbegrenzt
+    var allergens: [AllergenCode]
+
+    var isOutOfStock: Bool {
+        !inStock || (stockQuantity != nil && stockQuantity! <= 0)
+    }
 }
 
 // MARK: - Dynamic Custom Option Choice
-struct OptionChoice: Identifiable, Codable {
+struct OptionChoice: Identifiable, Codable, Equatable {
     var id: String { value }
     var label: String
     var value: String
     var priceDelta: Double?
+    var allergens: [AllergenCode] = []
 }
 
-struct CustomizationOption: Identifiable, Codable {
+struct CustomizationOption: Identifiable, Codable, Equatable {
     var id: String { key }
     var key: String
     var title: String
     var defaultValue: String
+    var isRequired: Bool = true
     var values: [OptionChoice]
 }
 
 // MARK: - Manufacturer Label Config
-struct ManufacturerLabelConfig: Codable {
+struct ManufacturerLabelConfig: Codable, Equatable {
     var allowed: Bool
     var headlinePlaceholder: String
     var maxHeadlineLength: Int
@@ -117,19 +172,42 @@ struct ManufacturerLabelConfig: Codable {
     var fixedBrandStamp: String
 }
 
+// MARK: - Customization Archetype
+// recipeBlend = slider-driven ratio recipe (coffee, tea, spice)
+// buildABox   = free-quantity assembly (ice cream scoops, beer flight)
+// bespoke     = single made-to-order item with mostly custom fields (cake)
+enum CustomizationArchetype: String, Codable {
+    case recipeBlend = "recipe_blend"
+    case buildABox = "build_a_box"
+    case bespoke = "bespoke"
+}
+
 // MARK: - Customization Config
-struct CustomizationConfig: Identifiable, Codable {
+struct CustomizationConfig: Identifiable, Codable, Equatable {
     var id: String
     var productId: String
+    var archetype: CustomizationArchetype = .recipeBlend
     var sliderTitle: String
+    var targetTotal: Double = 100
+    var targetUnit: String = "%"
     var totalWeightGrams: Int
     var components: [BlendComponent]
     var options: [CustomizationOption]
     var labelConfig: ManufacturerLabelConfig
 }
 
+// MARK: - Transaction Mode & Shipping
+enum TransactionMode: String, Codable {
+    case instantCheckout = "instant_checkout"
+    case quoteRequest = "quote_request"
+}
+
+enum ShippingRestriction: String, Codable {
+    case standard, pickupOnly = "pickup_only", coldChain = "cold_chain"
+}
+
 // MARK: - Product Model (Standard vs Custom)
-struct Product: Identifiable, Codable {
+struct Product: Identifiable, Codable, Equatable {
     var id: String
     var producerId: String
     var title: String
@@ -144,6 +222,15 @@ struct Product: Identifiable, Codable {
     var imageUrl: String
     var tags: [String]
     var config: CustomizationConfig?
+    var transactionMode: TransactionMode = .instantCheckout
+    var shippingRestriction: ShippingRestriction = .standard
+    var allergens: [AllergenCode] = []
+
+    var isOutOfStock: Bool {
+        !isCustomizable && stockQuantity != nil && stockQuantity! <= 0
+    }
+
+    static func == (lhs: Product, rhs: Product) -> Bool { lhs.id == rhs.id }
 }
 
 // MARK: - Recipe Item
@@ -176,10 +263,42 @@ struct CartItem: Identifiable, Codable {
     var recipe: [RecipeItem]?
     var selections: [String: String]?
     var customLabel: CustomLabelData?
-    
+
     var totalPrice: Double {
         unitPrice * Double(quantity)
     }
+
+    // Single source of truth for this item's LMIV/LIV-relevant allergens:
+    // the product's own fixed allergens plus whichever recipe components and
+    // custom-field choices actually ended up in this specific customization.
+    // Used both for the live customizer preview and for what gets persisted
+    // on the order, so the two can never diverge.
+    var aggregatedAllergens: [AllergenCode] {
+        var set = Set<AllergenCode>(product.allergens)
+        if let config = product.config {
+            if let recipe = recipe {
+                for r in recipe {
+                    if let comp = config.components.first(where: { $0.id == r.componentId }) {
+                        set.formUnion(comp.allergens)
+                    }
+                }
+            }
+            if let selections = selections {
+                for opt in config.options {
+                    guard let val = selections[opt.key] else { continue }
+                    if let choice = opt.values.first(where: { $0.value == val }) {
+                        set.formUnion(choice.allergens)
+                    }
+                }
+            }
+        }
+        return Array(set)
+    }
+}
+
+// MARK: - Fulfillment
+enum FulfillmentType: String, Codable {
+    case shipping, pickup
 }
 
 // MARK: - Order Model
@@ -187,27 +306,78 @@ enum OrderStatus: String, Codable, CaseIterable {
     case paid = "paid"
     case inProduction = "in_production"
     case labeling = "labeling"
-    case ready = "ready"
+    case readyForHandover = "ready_for_handover" // "ready to ship" or "ready for pickup"
     case shipped = "shipped"
-    
-    var title: String {
+    case completed = "completed"
+
+    // Pickup and shipping orders diverge from "labeling" onward — a pickup
+    // order is never "unterwegs" — so the visible steps/titles branch on the
+    // order's fulfillment type instead of forcing shipping language onto
+    // every order.
+    func title(for fulfillment: FulfillmentType) -> String {
         switch self {
         case .paid: return "Bezahlt & Eingeplant"
         case .inProduction: return "In Röstung / Produktion"
         case .labeling: return "Etikettierung & Kontrolle"
-        case .ready: return "Bereit zur Abholung"
-        case .shipped: return "Versendet mit Frischegarantie"
+        case .readyForHandover:
+            return fulfillment == .pickup ? "Abholbereit" : "Versandbereit"
+        case .shipped:
+            return "Versendet mit Frischegarantie"
+        case .completed:
+            return fulfillment == .pickup ? "Abgeholt" : "Zugestellt"
         }
     }
-    
+
     var stepIndex: Int {
         switch self {
         case .paid: return 0
         case .inProduction: return 1
         case .labeling: return 2
-        case .ready, .shipped: return 3
+        case .readyForHandover, .shipped: return 3
+        case .completed: return 4
         }
     }
+
+    // The ordered set of steps actually shown for a given fulfillment type —
+    // a pickup order never passes through .shipped, and a shipping order
+    // never shows "Abholbereit".
+    static func steps(for fulfillment: FulfillmentType) -> [OrderStatus] {
+        if fulfillment == .pickup {
+            return [.paid, .inProduction, .labeling, .readyForHandover, .completed]
+        }
+        return [.paid, .inProduction, .labeling, .shipped, .completed]
+    }
+
+    // Next actionable status in the KDS for a given order's fulfillment type;
+    // nil once the order is completed (final state).
+    func next(for fulfillment: FulfillmentType) -> OrderStatus? {
+        switch self {
+        case .paid: return .inProduction
+        case .inProduction: return .labeling
+        case .labeling: return fulfillment == .pickup ? .readyForHandover : .shipped
+        case .readyForHandover, .shipped: return .completed
+        case .completed: return nil
+        }
+    }
+
+    func previous(for fulfillment: FulfillmentType) -> OrderStatus? {
+        switch self {
+        case .paid: return nil
+        case .inProduction: return .paid
+        case .labeling: return .inProduction
+        case .readyForHandover, .shipped: return .labeling
+        case .completed: return fulfillment == .pickup ? .readyForHandover : .shipped
+        }
+    }
+}
+
+struct CustomerDetails: Codable, Equatable {
+    var name: String = ""
+    var email: String = ""
+    var street: String = ""
+    var postalCode: String = ""
+    var city: String = ""
+    var country: DACHCountry = .ch
 }
 
 struct Order: Identifiable, Codable {
@@ -215,16 +385,82 @@ struct Order: Identifiable, Codable {
     let orderNumber: String
     let producerId: String
     let producerName: String
-    let customerName: String
-    let customerEmail: String
-    let customerStreet: String
-    let customerCity: String
-    let customerPostalCode: String
-    let customerCountry: DACHCountry
+    let customer: CustomerDetails
     let items: [CartItem]
     var status: OrderStatus
+    let fulfillmentType: FulfillmentType
+    let subtotal: Double
+    let taxRate: Double
+    let taxAmount: Double
     let totalAmount: Double
     let paymentMethod: String
     let createdAt: Date
     let scheduledBatchDate: String
+    var isGift: Bool = false
+    var giftMessage: String = ""
+    var quoteId: String?
+}
+
+// MARK: - VAT helper (single source of truth, mirrors the web app's
+// calculateOrderTotals: prices are always gross/VAT-inclusive — this only
+// splits the gross amount into its net + tax components).
+struct OrderTotals {
+    let taxRate: Double
+    let subtotal: Double
+    let taxAmount: Double
+    let total: Double
+}
+
+func calculateOrderTotals(grossTotal: Double, country: DACHCountry) -> OrderTotals {
+    let rate = country.vatRate
+    let tax = grossTotal * (rate / (1 + rate))
+    return OrderTotals(taxRate: rate, subtotal: grossTotal, taxAmount: tax, total: grossTotal)
+}
+
+// MARK: - Quote / Offerte -> Rechnung flow (platform never touches this money)
+enum QuoteStatus: String, Codable {
+    case requested, quoted, declined, accepted, invoiced, paid
+
+    var title: String {
+        switch self {
+        case .requested: return "Warten auf Offerte"
+        case .quoted: return "Offerte erhalten"
+        case .declined: return "Abgelehnt"
+        case .accepted: return "Angenommen"
+        case .invoiced: return "Rechnung offen"
+        case .paid: return "Bezahlt"
+        }
+    }
+}
+
+struct QuoteItem: Identifiable, Codable {
+    var id: String = UUID().uuidString
+    var productTitle: String
+    var quantity: Int
+}
+
+struct Quote: Identifiable, Codable {
+    let id: String
+    let quoteNumber: String
+    let producerId: String
+    let producerName: String
+    var customer: CustomerDetails
+    var items: [QuoteItem]
+    var customerNote: String
+    var status: QuoteStatus
+    var quotedPrice: Double?
+    var quotedNote: String?
+    let createdAt: Date
+}
+
+struct Invoice: Identifiable, Codable {
+    let id: String
+    let invoiceNumber: String
+    let quoteId: String
+    let producerId: String
+    let amount: Double
+    let dueDate: String
+    let qrReference: String
+    var status: String // "open" | "paid"
+    let createdAt: Date
 }

@@ -106,14 +106,23 @@ struct ContentView: View {
                 }
                 .badge(store.orders.count)
                 .tag(2)
-            
-            // Tab 4: Producer KDS Workshop
+
+            // Tab 4: Quote requests (Anfrage -> Offerte -> Rechnung)
+            MyQuotesView()
+                .tabItem {
+                    Image(systemName: "doc.text")
+                    Text("Anfragen")
+                }
+                .badge(store.quotes.filter { $0.status == .quoted }.count)
+                .tag(3)
+
+            // Tab 5: Producer KDS Workshop
             ProducerPortalView()
                 .tabItem {
                     Image(systemName: "wrench.and.screwdriver")
                     Text("Werkstatt")
                 }
-                .tag(3)
+                .tag(4)
         }
         .accentColor(.black)
     }

@@ -3,15 +3,17 @@ import SwiftUI
 struct ProductInfoSheet: View {
     @EnvironmentObject var store: AtelierStore
     @Environment(\.presentationMode) var presentationMode
-    
+
     let product: Product
     let producer: Producer
-    
+
+    private var isOutOfStock: Bool { product.isOutOfStock }
+
     var body: some View {
         NavigationView {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
-                    
+
                     // Product Hero Image (Local Asset with fallback)
                     ZStack(alignment: .topTrailing) {
                         Image(product.imageUrl.replacingOccurrences(of: "/images/", with: "").replacingOccurrences(of: ".jpg", with: ""))
@@ -22,17 +24,17 @@ struct ProductInfoSheet: View {
                             .background(Color(white: 0.15))
                     }
                     .frame(maxWidth: .infinity)
-                    
+
                     VStack(alignment: .leading, spacing: 14) {
-                        
+
                         // Category & Tags
                         HStack(spacing: 8) {
                             Text(producer.name.uppercased())
                                 .font(.system(size: 10, weight: .bold, design: .monospaced))
                                 .foregroundColor(.secondary)
-                            
+
                             Spacer()
-                            
+
                             Text(product.unitText)
                                 .font(.system(size: 11, weight: .semibold, design: .monospaced))
                                 .padding(.horizontal, 8)
@@ -40,46 +42,74 @@ struct ProductInfoSheet: View {
                                 .background(Color(UIColor.secondarySystemGroupedBackground))
                                 .cornerRadius(6)
                         }
-                        
+
                         // Title & Price
                         HStack(alignment: .top) {
                             Text(product.title)
                                 .font(.system(size: 22, weight: .bold))
                                 .foregroundColor(.primary)
-                            
+
                             Spacer()
-                            
+
                             Text(String(format: "%@ %.2f", producer.currency, product.basePrice))
                                 .font(.system(size: 20, weight: .bold, design: .monospaced))
                                 .foregroundColor(.primary)
                         }
-                        
+
                         // Subtitle
                         Text(product.subtitle)
                             .font(.system(size: 14, design: .serif))
                             .italic()
                             .foregroundColor(.secondary)
-                        
+
                         Divider()
-                        
+
                         // Description
                         Text("BESCHREIBUNG")
                             .font(.system(size: 10, weight: .bold, design: .monospaced))
                             .foregroundColor(.secondary)
-                        
+
                         Text(product.description)
                             .font(.system(size: 13))
                             .lineSpacing(4)
                             .foregroundColor(.primary)
-                        
-                        // Stock / Freshness badge
-                        HStack(spacing: 12) {
-                            HStack(spacing: 6) {
-                                Circle().fill(Color.green).frame(width: 8, height: 8)
-                                Text("Lagernd (\(product.stockQuantity ?? 50) verfügbar)")
-                                    .font(.system(size: 12, weight: .medium))
+
+                        // Allergen Declaration (LMIV / LIV Pflichtangabe)
+                        if !product.allergens.isEmpty {
+                            HStack(alignment: .top, spacing: 8) {
+                                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                                Text("Enthält: \(product.allergens.map { $0.label }.joined(separator: ", "))")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.secondary)
                             }
-                            
+                            .padding(.vertical, 6)
+                            .padding(.horizontal, 10)
+                            .background(Color.orange.opacity(0.1))
+                            .cornerRadius(8)
+                        }
+
+                        // Stock / Freshness badge — reflects the actual stock
+                        // level instead of always showing a green dot.
+                        HStack(spacing: 12) {
+                            if product.transactionMode == .quoteRequest {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "doc.text").foregroundColor(.secondary)
+                                    Text("Nur auf Anfrage & individuelle Offerte")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                            } else if let stock = product.stockQuantity {
+                                HStack(spacing: 6) {
+                                    Circle().fill(stock > 0 ? Color.green : Color.red).frame(width: 8, height: 8)
+                                    Text(stock > 0 ? "Lagernd (\(stock) verfügbar)" : "Ausverkauft")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                            } else {
+                                HStack(spacing: 6) {
+                                    Circle().fill(Color.green).frame(width: 8, height: 8)
+                                    Text("Verfügbar").font(.system(size: 12, weight: .medium))
+                                }
+                            }
+
                             HStack(spacing: 6) {
                                 Image(systemName: "clock")
                                     .foregroundColor(Color(red: 0.61, green: 0.29, blue: 0.18))
@@ -92,29 +122,32 @@ struct ProductInfoSheet: View {
                         .padding(.horizontal, 12)
                         .background(Color(UIColor.secondarySystemGroupedBackground))
                         .cornerRadius(8)
-                        
-                        // Add to Cart Action
+
+                        // Add to Cart / Request Quote Action
                         Button(action: {
                             store.addToCart(CartItem(product: product, producer: producer, quantity: 1, unitPrice: product.basePrice))
                             presentationMode.wrappedValue.dismiss()
                         }) {
                             HStack {
-                                Image(systemName: "bag.badge.plus")
-                                Text("In den Warenkorb — \(String(format: "%@ %.2f", producer.currency, product.basePrice))")
+                                Image(systemName: product.transactionMode == .quoteRequest ? "paperplane.fill" : "bag.badge.plus")
+                                Text(product.transactionMode == .quoteRequest
+                                     ? "Für Anfrage vormerken"
+                                     : "In den Warenkorb — \(String(format: "%@ %.2f", producer.currency, product.basePrice))")
                                     .font(.system(size: 14, weight: .bold))
                             }
                             .foregroundColor(.white)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 14)
-                            .background(Color.black)
+                            .background(isOutOfStock ? Color.gray : Color.black)
                             .cornerRadius(12)
                             .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
                         }
+                        .disabled(isOutOfStock)
                         .padding(.top, 10)
-                        
+
                     }
                     .padding(.horizontal)
-                    
+
                 }
                 .padding(.bottom, 24)
             }
