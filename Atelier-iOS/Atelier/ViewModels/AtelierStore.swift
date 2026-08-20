@@ -17,7 +17,7 @@ private struct PersistedState: Codable {
     var myProducerIds: [String]
 }
 
-private let persistenceKey = "atelier_ios_state_v1"
+private let persistenceKey = "atelier_ios_state_v2"
 
 class AtelierStore: ObservableObject {
     // Mode
@@ -267,7 +267,15 @@ class AtelierStore: ObservableObject {
     // negotiation + invoice reference — money always moves directly between
     // customer and producer.
     @discardableResult
-    func createQuoteRequest(items: [QuoteItem], customer: CustomerDetails, producer: Producer, customerNote: String) -> Quote {
+    func createQuoteRequest(
+        items: [QuoteItem],
+        customer: CustomerDetails,
+        producer: Producer,
+        customerNote: String,
+        selectedTasteTags: [String]? = nil,
+        bespokeDescription: String? = nil,
+        customFieldValues: [String: String]? = nil
+    ) -> Quote {
         let quote = Quote(
             id: UUID().uuidString,
             quoteNumber: "OFF-2026-\(Int.random(in: 1000...9999))",
@@ -276,6 +284,9 @@ class AtelierStore: ObservableObject {
             customer: customer,
             items: items,
             customerNote: customerNote,
+            selectedTasteTags: selectedTasteTags,
+            bespokeDescription: bespokeDescription,
+            customFieldValues: customFieldValues,
             status: .requested,
             quotedPrice: nil,
             quotedNote: nil,
@@ -297,8 +308,7 @@ class AtelierStore: ObservableObject {
         persist()
     }
 
-    /// Customer accepts the producer's offer. This only records intent — the
-    /// producer still has to issue the actual invoice (issueInvoice below).
+    /// Customer accepts the producer's offer.
     func acceptQuote(quoteId: String) {
         guard let idx = quotes.firstIndex(where: { $0.id == quoteId }) else { return }
         quotes[idx].status = .accepted
@@ -313,7 +323,7 @@ class AtelierStore: ObservableObject {
         persist()
     }
 
-    /// Producer issues the invoice for an accepted quote (e.g. as a Swiss-QR-Rechnung).
+    /// Producer issues the invoice for an accepted quote.
     @discardableResult
     func issueInvoice(quoteId: String) -> Invoice? {
         guard let idx = quotes.firstIndex(where: { $0.id == quoteId }) else { return nil }
@@ -346,9 +356,34 @@ class AtelierStore: ObservableObject {
         persist()
     }
 
+    // MARK: - Producer Dynamic Config Management
+    func addCustomField(to productId: String, field: CustomField) {
+        guard let idx = products.firstIndex(where: { $0.id == productId }),
+              var cfg = products[idx].config else { return }
+        cfg.customFields.append(field)
+        products[idx].config = cfg
+        triggerSuccessFeedback()
+        persist()
+    }
+
+    func removeCustomField(from productId: String, fieldId: String) {
+        guard let idx = products.firstIndex(where: { $0.id == productId }),
+              var cfg = products[idx].config else { return }
+        cfg.customFields.removeAll { $0.id == fieldId }
+        products[idx].config = cfg
+        triggerHapticFeedback()
+        persist()
+    }
+
+    func updateProductMaxComponents(productId: String, maxComponents: Int?) {
+        guard let idx = products.firstIndex(where: { $0.id == productId }),
+              var cfg = products[idx].config else { return }
+        cfg.maxSelectableComponents = maxComponents
+        products[idx].config = cfg
+        persist()
+    }
+
     private func generateQrReference(seq: Int) -> String {
-        // Swiss-QR-Rechnung-style structured reference — simplified for
-        // prototype purposes, not a certified ISO 20022 QR-IBAN reference.
         let base = String(format: "%026d", Int(Date().timeIntervalSince1970 * 1000) + seq).suffix(26)
         let table = [0, 9, 4, 6, 8, 2, 7, 1, 3, 5]
         var carry = 0
@@ -361,8 +396,9 @@ class AtelierStore: ObservableObject {
         return "\(base)\(checkDigit)"
     }
 
-    // MARK: - Seed Data Loader (All 5 Swiss Craft Producers)
+    // MARK: - Seed Data Loader (All 8 Swiss Craft Producers & Products)
     private func loadSeedData() {
+        // 1. Rösterei
         let maelstrom = Producer(
             id: "prod-maelstrom",
             name: "Maelstrom Roasters",
@@ -371,7 +407,7 @@ class AtelierStore: ObservableObject {
             country: .ch,
             city: "Zürich",
             currency: "CHF",
-            bio: "Wir rösten handwerkliche Kaffeespezialitäten in Zürich-West. Unsere Bohnen stammen aus direktem Handel mit Kleinbauern und werden erst nach Eingang Ihrer individuellen Rezeptur frisch chargiert.",
+            bio: "Wir rösten handwerkliche Kaffeespezialitäten in Zürich-West. Wählen Sie bis zu 3 Bohnenherkünfte und bestimmen Sie Röstgrad und Mahlung für Ihre persönliche Röstcharge.",
             heroImageUrl: "coffee_roastery_hero",
             vatNumber: "CHE-412.890.123 MWST",
             leadTimeSchedule: "Röstung jeden Dienstag & Donnerstag",
@@ -382,6 +418,7 @@ class AtelierStore: ObservableObject {
             portalPin: "1001"
         )
 
+        // 2. Brauerei
         let aarauHops = Producer(
             id: "prod-aarau-hops",
             name: "Aarau Hops & Grain",
@@ -390,7 +427,7 @@ class AtelierStore: ObservableObject {
             country: .ch,
             city: "Aarau",
             currency: "CHF",
-            bio: "Unfiltrierte Biere aus dem Aargau. Wählen Sie Ihre Lieblingsstile für eine individuelle 6er-Box mit eigenem Etikett.",
+            bio: "Unfiltrierte Craft-Biere aus dem Aargau. Stellen Sie Ihre individuelle 6er-Box zusammen oder fragen Sie einen exklusiven Sondersud für Ihren Anlass an.",
             heroImageUrl: "craft_brewery_hero",
             vatNumber: "CHE-298.114.772 MWST",
             leadTimeSchedule: "Abfüllung & Frischeversand wöchentlich freitags",
@@ -401,6 +438,7 @@ class AtelierStore: ObservableObject {
             portalPin: "1002"
         )
 
+        // 3. Chocolatier
         let cacaoBasel = Producer(
             id: "prod-cacao-basel",
             name: "Cacao Atelier Basel",
@@ -409,7 +447,7 @@ class AtelierStore: ObservableObject {
             country: .ch,
             city: "Basel",
             currency: "CHF",
-            bio: "Feinste Bean-to-Bar Schokoladen mit sortenreinen Edelkakaos. Stellen Sie Kakaogehalt und Edelinversionen mit personalisierter Banderole zusammen.",
+            bio: "Feinste Bean-to-Bar Schokoladen mit sortenreinen Edelkakaos. Bestimmen Sie den Kakaogehalt per Schieberegler und wählen Sie handwerklich eingearbeitete Edelinversionen.",
             heroImageUrl: "chocolate_atelier_hero",
             vatNumber: "CHE-119.553.901 MWST",
             leadTimeSchedule: "Giessen dienstags, Versand mittwochs",
@@ -420,15 +458,16 @@ class AtelierStore: ObservableObject {
             portalPin: "1003"
         )
 
+        // 4. Eismanufaktur
         let gelatoBern = Producer(
             id: "prod-gletscher-gelato",
             name: "Gletscher Gelato Bern",
-            tagline: "Artisan Gelato · Kugel für Kugel frisch zusammengestellt",
+            tagline: "Artisan Gelato · Freier Geschmacksmix & Eigenkreationen",
             category: .iceCream,
             country: .ch,
             city: "Bern",
             currency: "CHF",
-            bio: "Täglich frisch gerührtes Gelato aus Berner Bergmilch. Stellen Sie Ihren eigenen Becher aus unseren Sorten zusammen — nur zur Abholung.",
+            bio: "Täglich frisch gerührtes Gelato und Fruchtsorbets aus Berner Bergmilch. Mischen Sie freie Aromenkombinationen im 500ml-Pint oder fragen Sie eine massgeschneiderte Eigenkreation an.",
             heroImageUrl: "gelato_hero",
             vatNumber: "CHE-330.774.221 MWST",
             leadTimeSchedule: "Täglich frisch gerührt, Abholung ab 11:00",
@@ -439,6 +478,7 @@ class AtelierStore: ObservableObject {
             portalPin: "1004"
         )
 
+        // 5. Bäckerei
         let zopfZeit = Producer(
             id: "prod-zopf-zeit",
             name: "Bäckerei Zopf & Zeit",
@@ -447,7 +487,7 @@ class AtelierStore: ObservableObject {
             country: .ch,
             city: "Luzern",
             currency: "CHF",
-            bio: "Handgefertigte Torten und Festgebäck für besondere Anlässe. Jede Torte wird als meisterhaftes Einzelstück nach Ihren Wünschen gefertigt.",
+            bio: "Handgefertigte Torten und Festgebäck für besondere Anlässe. Jede Torte wird als meisterhaftes Einzelstück nach Ihren Wünschen und Geschmacksvorlieben gefertigt.",
             heroImageUrl: "bakery_hero",
             vatNumber: "CHE-401.882.556 MWST",
             leadTimeSchedule: "Vorlaufzeit mind. 5 Werktage ab Offertannahme",
@@ -458,20 +498,83 @@ class AtelierStore: ObservableObject {
             portalPin: "1005"
         )
 
-        self.producers = [maelstrom, aarauHops, cacaoBasel, gelatoBern, zopfZeit]
+        // 6. Destillerie
+        let matterDistillers = Producer(
+            id: "prod-matter-distillers",
+            name: "Distillerie Matter & Geist",
+            tagline: "Handcrafted Botanical Spirits & Small-Batch Gin",
+            category: .spirits,
+            country: .ch,
+            city: "Kallnach / Bern",
+            currency: "CHF",
+            bio: "Historische Kupferkessel-Destillerie. Kreieren Sie Ihren persönlichen Botanical Spirit aus handverlesenen Alpenkräutern, Wacholder und Zitrusfrüchten mit individueller Trinkstärke.",
+            heroImageUrl: "craft_brewery_hero",
+            vatNumber: "CHE-105.882.331 MWST",
+            leadTimeSchedule: "Brennen mittwochs, Abfüllung freitags",
+            batchScheduleNotice: "Nächster Brand: Mittwoch",
+            establishedYear: 2017,
+            contactEmail: "stillmaster@matter-geist.ch",
+            capacityPerBatch: 20,
+            portalPin: "1006"
+        )
+
+        // 7. Teemanufaktur
+        let engadinTea = Producer(
+            id: "prod-engadin-tea",
+            name: "Engadin Tee Atelier",
+            tagline: "Alpine Wildkräuter & Grand Cru Teeblends",
+            category: .tea,
+            country: .ch,
+            city: "St. Moritz",
+            currency: "CHF",
+            bio: "Handgepflückte Schweizer Alpenkräuter kombiniert mit sortenreinen Bio-Tees. Stellen Sie Ihre individuelle Teemischung mit persönlicher Dosenbeschriftung zusammen.",
+            heroImageUrl: "gelato_hero",
+            vatNumber: "CHE-229.441.902 MWST",
+            leadTimeSchedule: "Mischen & Wiegen donnerstags",
+            batchScheduleNotice: "Wöchentliche Mischung: Donnerstag",
+            establishedYear: 2020,
+            contactEmail: "atelier@engadin-tea.ch",
+            capacityPerBatch: 35,
+            portalPin: "1007"
+        )
+
+        // 8. Feinkost & Gewürze
+        let ticinoGusto = Producer(
+            id: "prod-ticino-gusto",
+            name: "Ticino Gusto Manufaktur",
+            tagline: "Artisan Kräutersalze, Pfefferblends & Würzöle",
+            category: .deli,
+            country: .ch,
+            city: "Lugano",
+            currency: "CHF",
+            bio: "Mediterrane Kräuter und sonnengetrocknete Gewürze aus dem Tessin. Mischen Sie Ihr Würzsalz nach individuellem Schärfegrad und Aromaprofil.",
+            heroImageUrl: "bakery_hero",
+            vatNumber: "CHE-380.119.447 MWST",
+            leadTimeSchedule: "Mahlung & Abfüllung dienstags",
+            batchScheduleNotice: "Frische Mahlung: Dienstag",
+            establishedYear: 2016,
+            contactEmail: "gusto@ticino-feinkost.ch",
+            capacityPerBatch: 50,
+            portalPin: "1008"
+        )
+
+        self.producers = [maelstrom, aarauHops, cacaoBasel, gelatoBern, zopfZeit, matterDistillers, engadinTea, ticinoGusto]
         self.selectedProducer = maelstrom
-        self.myProducerIds = ["prod-maelstrom"]
+        self.myProducerIds = ["prod-maelstrom", "prod-gletscher-gelato"]
         self.unlockedProducerIds = []
 
-        // MTO Coffee Customizer (recipe_blend, all 4 origins currently in stock)
+        // MARK: - Products & Configs
+
+        // 1. ☕ COFFEE: MTO Blend (max. 3 Single Origins, Röstgrad-Slider, Mahlgrad)
         let coffeeConfig = CustomizationConfig(
             id: "cfg-coffee",
             productId: "prod-coffee-custom-blend",
             archetype: .recipeBlend,
-            sliderTitle: "Bohnenmischung (100% gesperrt)",
+            sliderTitle: "Bohnenherkunft (max. 3 Sorten wählbar)",
             targetTotal: 100,
             targetUnit: "%",
             totalWeightGrams: 500,
+            maxSelectableComponents: 3,
             components: [
                 BlendComponent(id: "c-ethiopia", name: "Äthiopien Yirgacheffe G1", origin: "2'050m / Washed", process: "Floral & Pfirsich", notes: ["Bergamotte", "Jasmin"], priceMultiplier: 1.15, hexColor: "E0A96D", maxRatio: 100, inStock: true, stockQuantity: 8000, allergens: []),
                 BlendComponent(id: "c-colombia", name: "Kolumbien Huila Supremo", origin: "1'750m / Washed", process: "Süss & Schokoladig", notes: ["Roter Apfel", "Karamell"], priceMultiplier: 1.05, hexColor: "A65335", maxRatio: 100, inStock: true, stockQuantity: 6500, allergens: []),
@@ -493,6 +596,25 @@ class AtelierStore: ObservableObject {
                     ]
                 )
             ],
+            customFields: [
+                CustomField(
+                    id: "cf-coffee-roast",
+                    key: "roast_level",
+                    title: "Röstgrad & Röstprofil",
+                    subtitle: "Bestimmt Säure, Körper und Karamellisierung der Bohnen",
+                    fieldType: .slider(
+                        min: 1, max: 4, step: 1, unit: "", defaultValue: 2,
+                        labels: [
+                            SliderLabel(value: 1, label: "Hell (Nordic / Filter)"),
+                            SliderLabel(value: 2, label: "Medium (Omniroast)"),
+                            SliderLabel(value: 3, label: "Medium-Dark (Full City)"),
+                            SliderLabel(value: 4, label: "Dunkel (Italian Espresso)")
+                        ]
+                    ),
+                    isRequired: true,
+                    order: 0
+                )
+            ],
             labelConfig: ManufacturerLabelConfig(
                 allowed: true,
                 headlinePlaceholder: "z.B. Julians Morning Fuel",
@@ -500,15 +622,16 @@ class AtelierStore: ObservableObject {
                 allowDedication: true,
                 maxDedicationLength: 45,
                 fixedBrandStamp: "+ SWISS CRAFT · MAELSTROM"
-            )
+            ),
+            allowsBespokeQuoteRequest: false
         )
 
         let coffeeCustom = Product(
             id: "prod-coffee-custom-blend",
             producerId: "prod-maelstrom",
             title: "Signature Custom Coffee Blend (500g)",
-            subtitle: "Kreieren Sie Ihren persönlichen Blend mit Live-Etikett",
-            description: "Kombinieren Sie Single Origins per Schieberegler exakt nach Ihrem Geschmacksprofil. Wir wiegen grammgenau ein und drucken Ihr persönliches Etikett.",
+            subtitle: "Bohnenmix (max. 3 Herkünfte) & Röstgrad individuell definieren",
+            description: "Kombinieren Sie bis zu 3 Single Origins per Schieberegler und wählen Sie Ihren gewünschten Röstgrad (Hell bis Espresso). Frisch auf Bestellung geröstet.",
             category: .coffee,
             basePrice: 22.00,
             unitText: "500g Beutel",
@@ -543,22 +666,123 @@ class AtelierStore: ObservableObject {
             allergens: []
         )
 
-        // Craft Beer Custom Box (build_a_box) — "Altstadt Smoked Porter" is
-        // seeded already sold out, the same scenario the web app's fix for
-        // out-of-stock components in the ratio distribution guards against.
+        // 2. 🍦 ICE CREAM: Custom Pint Flavor Mix & Bespoke Quote Request (no scoop counting)
+        let gelatoConfig = CustomizationConfig(
+            id: "cfg-gelato-pint",
+            productId: "prod-gelato-custom-tub",
+            archetype: .flavorMix,
+            sliderTitle: "Aromen- & Fruchtanteile im Pint",
+            targetTotal: 100,
+            targetUnit: "%",
+            totalWeightGrams: 450,
+            maxSelectableComponents: 3,
+            components: [
+                BlendComponent(id: "g-maracuja", name: "Passionsfrucht / Maracuja (Fruchtpur)", origin: "Sonnengereift", process: "Vegan & Säuerlich-Fruchtig", notes: ["Maracuja", "Erfrischend"], priceMultiplier: 1.10, hexColor: "EFA00B", maxRatio: 100, inStock: true, stockQuantity: 60, allergens: []),
+                BlendComponent(id: "g-himbeere", name: "Wildhimbeer Coulis", origin: "Emmental", process: "Fruchtig & aromatisch", notes: ["Himbeere", "Sommer"], priceMultiplier: 1.05, hexColor: "C94F5C", maxRatio: 100, inStock: true, stockQuantity: 80, allergens: []),
+                BlendComponent(id: "g-pistazie", name: "Sizilianische Bronte-Pistazie", origin: "D.O.P. Sizilien", process: "Nussig & intensiv", notes: ["Pistazie", "Röstnoten"], priceMultiplier: 1.25, hexColor: "8DAA59", maxRatio: 100, inStock: true, stockQuantity: 45, allergens: [.nuts, .milk]),
+                BlendComponent(id: "g-bergmilch", name: "Berner Bergmilch Fior di Latte", origin: "Berner Oberland", process: "Cremig & pur", notes: ["Frische Sahne", "Vanille"], priceMultiplier: 0.95, hexColor: "F5F3E9", maxRatio: 100, inStock: true, stockQuantity: 100, allergens: [.milk]),
+                BlendComponent(id: "g-schoko", name: "Dunkle Valrhona Schokolade 70%", origin: "Guanaja Blend", process: "Kräftig & herb", notes: ["Bitterschokolade"], priceMultiplier: 1.10, hexColor: "3C2415", maxRatio: 100, inStock: true, stockQuantity: 50, allergens: [.milk, .soy]),
+                BlendComponent(id: "g-haselnuss", name: "Piemonteser Haselnuss I.G.P.", origin: "Langhe Piemont", process: "Geröstet & samtig", notes: ["Haselnuss", "Nougat"], priceMultiplier: 1.15, hexColor: "A2703F", maxRatio: 100, inStock: true, stockQuantity: 70, allergens: [.nuts, .milk])
+            ],
+            options: [
+                CustomizationOption(
+                    key: "pint_base",
+                    title: "Gelato-Grundbasis",
+                    defaultValue: "bergmilch",
+                    isRequired: true,
+                    values: [
+                        OptionChoice(label: "Bio-Berner Bergmilch (Klassisch cremig)", value: "bergmilch", priceDelta: 0, allergens: [.milk]),
+                        OptionChoice(label: "Vegane Hafer- & Mandelbasis (+ CHF 1.00)", value: "oat_vegan", priceDelta: 1.0, allergens: [.nuts]),
+                        OptionChoice(label: "Reines Frucht-Sorbet (100% Vegan & laktosefrei)", value: "sorbet", priceDelta: 0, allergens: [])
+                    ]
+                ),
+                CustomizationOption(
+                    key: "swirl_in",
+                    title: "Hausgemachter Swirl & Inclusions",
+                    defaultValue: "none",
+                    isRequired: false,
+                    values: [
+                        OptionChoice(label: "Ohne Swirl", value: "none", priceDelta: 0),
+                        OptionChoice(label: "Gletscher-Salzkaramell Swirl (+ CHF 1.50)", value: "salted_caramel", priceDelta: 1.50, allergens: [.milk]),
+                        OptionChoice(label: "Wildhimbeer-Balsamico Swirl (+ CHF 1.50)", value: "raspberry_swirl", priceDelta: 1.50),
+                        OptionChoice(label: "Gerösteter Pistazien-Crunch (+ CHF 2.00)", value: "pistachio_crunch", priceDelta: 2.00, allergens: [.nuts])
+                    ]
+                )
+            ],
+            customFields: [
+                CustomField(
+                    id: "cf-gelato-sweetness",
+                    key: "sweetness_level",
+                    title: "Süsse- & Säure-Balance",
+                    subtitle: "Bestimmt das Verhältnis aus natürlicher Fruchtsäure und feiner Süsse",
+                    fieldType: .slider(
+                        min: 70, max: 130, step: 10, unit: "%", defaultValue: 100,
+                        labels: [
+                            SliderLabel(value: 70, label: "Fruchtig-Säuerlich (70%)"),
+                            SliderLabel(value: 100, label: "Ausgewogen (100%)"),
+                            SliderLabel(value: 130, label: "Süss & Mild (130%)")
+                        ]
+                    ),
+                    isRequired: true,
+                    order: 0
+                ),
+                CustomField(
+                    id: "cf-gelato-tags",
+                    key: "flavor_notes",
+                    title: "Geschmacksprofil der Kreation",
+                    subtitle: "Wählen Sie die dominierenden Noten Ihrer Mischung",
+                    fieldType: .tasteProfile(availableTags: ["fruchtig", "süss", "nussig", "cremig", "sauer / herb", "schokoladig", "erfrischend", "vegan"]),
+                    isRequired: false,
+                    order: 1
+                )
+            ],
+            labelConfig: ManufacturerLabelConfig(
+                allowed: true,
+                headlinePlaceholder: "z.B. Maracuja-Himbeer Sommer-Pint",
+                maxHeadlineLength: 26,
+                allowDedication: true,
+                maxDedicationLength: 40,
+                fixedBrandStamp: "+ SWISS CRAFT · GLETSCHER GELATO"
+            ),
+            allowsBespokeQuoteRequest: true,
+            bespokePlaceholder: "Beschreiben Sie Ihre Wunschkreation (z.B. Maracuja-Himbeer Sorbet mit geröstetem Bergthymian & rosa Pfeffer, eher fruchtig-säuerlich)...",
+            bespokeTasteTags: ["fruchtig", "süss", "nussig", "cremig", "sauer / erfrischend", "schokoladig", "kräuter / floral", "vegan"]
+        )
+
+        let gelatoCustomTub = Product(
+            id: "prod-gelato-custom-tub",
+            producerId: "prod-gletscher-gelato",
+            title: "Artisan Gelato Pint (500ml) & Eigenkreation",
+            subtitle: "Freier Geschmacksmix (z.B. Maracuja + Himbeer) oder Wunschrezept anfragen",
+            description: "Kreieren Sie Ihren persönlichen 500ml-Pint aus frischer Bergmilch oder veganer Basis mit freier Aromakombination. Sie können auch eine ganz eigene Spezial-Kreation anfragen, die unsere Eismeister prüfen und offerieren.",
+            category: .iceCream,
+            basePrice: 14.50,
+            unitText: "500ml Pint-Becher",
+            weightGrams: 450,
+            isCustomizable: true,
+            stockQuantity: nil,
+            imageUrl: "gelato_hero",
+            tags: ["Tagesfrisch", "Freier Mix", "Offert-Option", "Abholung"],
+            config: gelatoConfig,
+            transactionMode: .instantCheckout,
+            shippingRestriction: .pickupOnly,
+            allergens: []
+        )
+
+        // 3. 🍺 BEER: Curated Box & Sondersud-Anfrage
         let beerConfig = CustomizationConfig(
             id: "cfg-beer-box",
             productId: "prod-beer-custom-box",
             archetype: .buildABox,
             sliderTitle: "Flaschenauswahl für 6er-Box",
-            targetTotal: 100,
-            targetUnit: "%",
+            targetTotal: 6,
+            targetUnit: " Flaschen",
             totalWeightGrams: 1980,
             components: [
-                BlendComponent(id: "b-hazy", name: "Aare Hazy Double IPA (7.2%)", origin: "Citra Dry Hop", process: "Fruchtig & trüb", notes: ["Maracuja", "Grapefruit"], priceMultiplier: 1.12, hexColor: "EBB344", maxRatio: 100, inStock: true, stockQuantity: 180, allergens: [.gluten]),
-                BlendComponent(id: "b-pale", name: "Kettenbrücke Session Pale (4.8%)", origin: "Hallertau Blanc", process: "Leicht & frisch", notes: ["Stachelbeere", "Frisch"], priceMultiplier: 0.95, hexColor: "F4D06F", maxRatio: 100, inStock: true, stockQuantity: 240, allergens: [.gluten]),
-                BlendComponent(id: "b-sour", name: "Jura Wild Sour Cherry (5.5%)", origin: "Sauerkirschen", process: "Säuerlich & trocken", notes: ["Fruchtsäure", "Trocken"], priceMultiplier: 1.20, hexColor: "9C2E35", maxRatio: 100, inStock: true, stockQuantity: 90, allergens: [.gluten, .sulfites]),
-                BlendComponent(id: "b-porter", name: "Altstadt Smoked Porter (6.8%)", origin: "Rauchmalz", process: "Rauchig & dunkel", notes: ["Bitterschokolade", "Rauch"], priceMultiplier: 1.05, hexColor: "261C14", maxRatio: 100, inStock: true, stockQuantity: 0, allergens: [.gluten])
+                BlendComponent(id: "b-hazy", name: "Aare Hazy Double IPA (7.2%)", origin: "Citra Dry Hop", process: "Fruchtig & trüb", notes: ["Maracuja", "Grapefruit"], priceMultiplier: 1.12, hexColor: "EBB344", maxRatio: 6, inStock: true, stockQuantity: 180, allergens: [.gluten]),
+                BlendComponent(id: "b-pale", name: "Kettenbrücke Session Pale (4.8%)", origin: "Hallertau Blanc", process: "Leicht & frisch", notes: ["Stachelbeere", "Frisch"], priceMultiplier: 0.95, hexColor: "F4D06F", maxRatio: 6, inStock: true, stockQuantity: 240, allergens: [.gluten]),
+                BlendComponent(id: "b-sour", name: "Jura Wild Sour Cherry (5.5%)", origin: "Sauerkirschen", process: "Säuerlich & trocken", notes: ["Fruchtsäure", "Trocken"], priceMultiplier: 1.20, hexColor: "9C2E35", maxRatio: 6, inStock: true, stockQuantity: 90, allergens: [.gluten, .sulfites]),
+                BlendComponent(id: "b-porter", name: "Altstadt Smoked Porter (6.8%)", origin: "Rauchmalz", process: "Rauchig & dunkel", notes: ["Bitterschokolade", "Rauch"], priceMultiplier: 1.05, hexColor: "261C14", maxRatio: 6, inStock: true, stockQuantity: 40, allergens: [.gluten])
             ],
             options: [
                 CustomizationOption(
@@ -572,6 +796,21 @@ class AtelierStore: ObservableObject {
                     ]
                 )
             ],
+            customFields: [
+                CustomField(
+                    id: "cf-beer-glass",
+                    key: "glassware",
+                    title: "Tasting-Glas Zugabe",
+                    subtitle: "Handgefertigtes Atelier Verkostungsglas",
+                    fieldType: .singleChoice(options: [
+                        OptionChoice(label: "Kein Zusatzglas", value: "none", priceDelta: 0),
+                        OptionChoice(label: "1x Atelier Sommelier-Glas (+ CHF 7.00)", value: "1_glass", priceDelta: 7.0),
+                        OptionChoice(label: "2x Sommelier-Gläser Set (+ CHF 12.00)", value: "2_glasses", priceDelta: 12.0)
+                    ]),
+                    isRequired: false,
+                    order: 0
+                )
+            ],
             labelConfig: ManufacturerLabelConfig(
                 allowed: true,
                 headlinePlaceholder: "z.B. Summer Solstice Sud #08",
@@ -579,15 +818,18 @@ class AtelierStore: ObservableObject {
                 allowDedication: true,
                 maxDedicationLength: 40,
                 fixedBrandStamp: "+ SWISS CRAFT · AARAU HOPS"
-            )
+            ),
+            allowsBespokeQuoteRequest: true,
+            bespokePlaceholder: "Sondersud-Anfrage: z.B. 24er Kiste NEIPA mit Citra & Mosaic für ein Fest...",
+            bespokeTasteTags: ["hopfenbetont / bitter", "fruchtig / tropisch", "malzig / süss", "sauer / trocken", "rauchig", "dunkel"]
         )
 
         let beerBox = Product(
             id: "prod-beer-custom-box",
             producerId: "prod-aarau-hops",
             title: "Curated 6er Craft Beer Flight & Custom Label",
-            subtitle: "Stellen Sie Ihre 6 Lieblingsflaschen zusammen",
-            description: "Wählen Sie die 6 Flaschen Ihrer Box aus unseren frisch gebrauten Suden. Inklusive individuellem Flaschenetikett.",
+            subtitle: "Stellen Sie Ihre 6 Flaschen zusammen oder fragen Sie einen Sondersud an",
+            description: "Wählen Sie 6 Flaschen aus unseren frischen Suden mit individuellem Etikett oder fragen Sie einen exklusiven Sondersud für Ihren Event an.",
             category: .beer,
             basePrice: 28.50,
             unitText: "6x 330ml Box",
@@ -602,105 +844,468 @@ class AtelierStore: ObservableObject {
             allergens: []
         )
 
+        // 4. 🍫 CHOCOLATE: Grand Cru Tafel (Kakaogehalt-Slider 55-88%, Ursprung, Inklusionen)
+        let chocolateConfig = CustomizationConfig(
+            id: "cfg-chocolate-bar",
+            productId: "prod-chocolate-bar-custom",
+            archetype: .flavorMix,
+            sliderTitle: "Edelinversionen & Toppings",
+            targetTotal: 100,
+            targetUnit: "%",
+            totalWeightGrams: 120,
+            maxSelectableComponents: 3,
+            components: [
+                BlendComponent(id: "ch-nibs", name: "Bio Kakaobruch (Peru)", origin: "Chuncho Urkakao", process: "Geröstet & crunchy", notes: ["Kakao pur", "Crunch"], priceMultiplier: 1.10, hexColor: "4A2E18", maxRatio: 100, inStock: true, stockQuantity: 90, allergens: []),
+                BlendComponent(id: "ch-salz", name: "Fleur de Sel de Guérande", origin: "Atlantikküste", process: "Handgeschöpft", notes: ["Feines Meersalz"], priceMultiplier: 1.05, hexColor: "DCD6CD", maxRatio: 100, inStock: true, stockQuantity: 120, allergens: []),
+                BlendComponent(id: "ch-himbeer", name: "Gefriergetrocknete Himbeeren", origin: "Schweiz", process: "Fruchtig & knusprig", notes: ["Fruchtsäure", "Beeren"], priceMultiplier: 1.15, hexColor: "C0392B", maxRatio: 100, inStock: true, stockQuantity: 55, allergens: []),
+                BlendComponent(id: "ch-haselnuss", name: "Geröstete Piemont-Haselnüsse", origin: "Piemont I.G.P.", process: "Karamellisiert", notes: ["Nussig", "Knusprig"], priceMultiplier: 1.20, hexColor: "B9770E", maxRatio: 100, inStock: true, stockQuantity: 70, allergens: [.nuts]),
+                BlendComponent(id: "ch-pfeffer", name: "Rosa Pfeffer & Chili-Flocken", origin: "Madagaskar", process: "Würzige Schärfe", notes: ["Würzig", "Leichte Schärfe"], priceMultiplier: 1.10, hexColor: "922B21", maxRatio: 100, inStock: true, stockQuantity: 40, allergens: [])
+            ],
+            options: [
+                CustomizationOption(
+                    key: "cacao_origin",
+                    title: "Edelkakao-Provenienz",
+                    defaultValue: "peru_chuncho",
+                    isRequired: true,
+                    values: [
+                        OptionChoice(label: "Peru Chuncho (Floral & tropisch)", value: "peru_chuncho", priceDelta: 0),
+                        OptionChoice(label: "Ecuador Hacienda Victoria (Nussig & Karamell)", value: "ecuador_victoria", priceDelta: 0),
+                        OptionChoice(label: "Venezuela Carenero Superior (Würzig & Tabak)", value: "venezuela_carenero", priceDelta: 1.50)
+                    ]
+                )
+            ],
+            customFields: [
+                CustomField(
+                    id: "cf-choco-cocoa",
+                    key: "cocoa_percentage",
+                    title: "Kakaogehalt & Intensität",
+                    subtitle: "Bestimmt die Balance aus Schmelz, Bitternote und natürlicher Kakaosüsse",
+                    fieldType: .slider(
+                        min: 55, max: 88, step: 3, unit: "%", defaultValue: 72,
+                        labels: [
+                            SliderLabel(value: 55, label: "Mild & Cremig (55%)"),
+                            SliderLabel(value: 72, label: "Grand Cru Klassik (72%)"),
+                            SliderLabel(value: 88, label: "Intensiv Dark (88%)")
+                        ]
+                    ),
+                    isRequired: true,
+                    order: 0
+                ),
+                CustomField(
+                    id: "cf-choco-tags",
+                    key: "taste_profile",
+                    title: "Gewünschtes Geschmacksprofil",
+                    subtitle: "Wählen Sie die aromatische Ausrichtung",
+                    fieldType: .tasteProfile(availableTags: ["herb", "schokoladig", "fruchtig", "nussig", "salzig", "würzig", "feurig"]),
+                    isRequired: false,
+                    order: 1
+                )
+            ],
+            labelConfig: ManufacturerLabelConfig(
+                allowed: true,
+                headlinePlaceholder: "z.B. Grand Cru Basel Edition",
+                maxHeadlineLength: 26,
+                allowDedication: true,
+                maxDedicationLength: 40,
+                fixedBrandStamp: "+ SWISS CRAFT · CACAO BASEL"
+            ),
+            allowsBespokeQuoteRequest: true,
+            bespokePlaceholder: "Wunschtafel: z.B. 80% Tafel mit geräuchertem Meersalz und getrockneten Feigen...",
+            bespokeTasteTags: ["herb", "schokoladig", "fruchtig", "nussig", "salzig / karamell", "würzig"]
+        )
+
         let chocolateBar = Product(
             id: "prod-chocolate-bar-custom",
             producerId: "prod-cacao-basel",
-            title: "Grand Cru Schokoladentafel (100g)",
-            subtitle: "Bean-to-Bar Grand Cru mit Banderole",
-            description: "Sortenreine Edelschokolade mit traditioneller Walzung und Kakaobruch-Inklusionen.",
+            title: "Grand Cru Schokoladentafel & Inklusionen (120g)",
+            subtitle: "Kakaogehalt (55–88%) & Edelinversionen frei bestimmen",
+            description: "Wählen Sie Kakaogehalt, Urkakao-Herkunft und Edelinversionen wie Fleur de Sel oder Piemont-Haselnüsse mit edler Banderole.",
             category: .chocolate,
-            basePrice: 12.50,
-            unitText: "100g Tafel",
-            weightGrams: 100,
-            isCustomizable: false,
-            stockQuantity: 65,
+            basePrice: 14.50,
+            unitText: "120g Tafel",
+            weightGrams: 120,
+            isCustomizable: true,
+            stockQuantity: nil,
             imageUrl: "chocolate_bar_custom",
-            tags: ["Bean-to-Bar", "Grand Cru"],
-            config: nil,
+            tags: ["Bean-to-Bar", "Grand Cru", "Basel"],
+            config: chocolateConfig,
             transactionMode: .instantCheckout,
             shippingRestriction: .standard,
             allergens: [.milk, .soy]
         )
 
-        // Build-Your-Own Gelato (build_a_box, pickup only)
-        let gelatoConfig = CustomizationConfig(
-            id: "cfg-gelato-cup",
-            productId: "prod-gelato-cup",
-            archetype: .buildABox,
-            sliderTitle: "Kugelauswahl (max. 3 Kugeln inklusive)",
-            targetTotal: 3,
-            targetUnit: "Kugeln",
-            totalWeightGrams: 240,
-            components: [
-                BlendComponent(id: "g-pistazie", name: "Sizilianische Pistazie", origin: "", process: "Nussig & cremig", notes: ["Nussig", "Cremig"], priceMultiplier: 1.1, hexColor: "9CAF6B", maxRatio: 3, inStock: true, stockQuantity: 40, allergens: [.milk, .nuts]),
-                BlendComponent(id: "g-fragola", name: "Fragola di Bosco (Walderdbeere)", origin: "", process: "Fruchtig & vegan", notes: ["Fruchtig", "Vegan"], priceMultiplier: 1.0, hexColor: "C94F5C", maxRatio: 3, inStock: true, stockQuantity: 55, allergens: []),
-                BlendComponent(id: "g-stracciatella", name: "Stracciatella", origin: "", process: "Cremig mit Schokosplittern", notes: ["Cremig", "Schokosplitter"], priceMultiplier: 1.05, hexColor: "F4F1E8", maxRatio: 3, inStock: true, stockQuantity: 60, allergens: [.milk])
-            ],
+        // 5. 🎂 BAKERY: Anlass-Torte nach Mass (Grössen-Slider, Geschmacksprofil, Offertanfrage)
+        let bakeryConfig = CustomizationConfig(
+            id: "cfg-bakery-cake",
+            productId: "prod-bakery-cake",
+            archetype: .bespoke,
+            sliderTitle: "Torten-Spezifikation",
+            targetTotal: 100,
+            targetUnit: "%",
+            totalWeightGrams: 1500,
             options: [
                 CustomizationOption(
-                    key: "topping",
-                    title: "Topping",
-                    defaultValue: "none",
-                    isRequired: false,
+                    key: "sponge",
+                    title: "Biskuit- & Teigart",
+                    defaultValue: "vanilla",
+                    isRequired: true,
                     values: [
-                        OptionChoice(label: "Ohne Topping", value: "none", priceDelta: 0),
-                        OptionChoice(label: "Geröstete Haselnüsse", value: "hazelnut", priceDelta: 1.0, allergens: [.nuts]),
-                        OptionChoice(label: "Schokoladensauce", value: "chocolate", priceDelta: 1.0, allergens: [.milk, .soy])
+                        OptionChoice(label: "Lockerer Bourbon-Vanille Biskuit", value: "vanilla", priceDelta: 0, allergens: [.gluten, .eggs]),
+                        OptionChoice(label: "Dunkler Valrhona Schoko-Biskuit", value: "chocolate", priceDelta: 0, allergens: [.gluten, .eggs, .milk]),
+                        OptionChoice(label: "Nuss-Mandel-Teig (Glutenreduziert)", value: "almond_nut", priceDelta: 5.0, allergens: [.nuts, .eggs]),
+                        OptionChoice(label: "Zitronen-Mohn Rührteig", value: "lemon_poppy", priceDelta: 0, allergens: [.gluten, .eggs])
                     ]
+                ),
+                CustomizationOption(
+                    key: "cream",
+                    title: "Creme & Füllung",
+                    defaultValue: "raspberry_mascarpone",
+                    isRequired: true,
+                    values: [
+                        OptionChoice(label: "Frische Himbeer-Mascarpone Creme", value: "raspberry_mascarpone", priceDelta: 0, allergens: [.milk]),
+                        OptionChoice(label: "Dunkle Grand Cru Schoko-Ganache", value: "dark_ganache", priceDelta: 0, allergens: [.milk]),
+                        OptionChoice(label: "Passionsfrucht-Limetten Quarkcreme", value: "passion_lime", priceDelta: 0, allergens: [.milk]),
+                        OptionChoice(label: "Pistazien-Mousseline Creme", value: "pistachio_mousseline", priceDelta: 6.0, allergens: [.milk, .nuts])
+                    ]
+                )
+            ],
+            customFields: [
+                CustomField(
+                    id: "cf-cake-size",
+                    key: "guest_count",
+                    title: "Personenanzahl / Grösse der Torte",
+                    subtitle: "Bestimmt Durchmesser, Etagen und Portionierung",
+                    fieldType: .slider(
+                        min: 6, max: 30, step: 2, unit: " Pers.", defaultValue: 12,
+                        labels: [
+                            SliderLabel(value: 6, label: "Kompakt (6 Pers.)"),
+                            SliderLabel(value: 12, label: "Klassisch (12 Pers.)"),
+                            SliderLabel(value: 20, label: "Gross (20 Pers.)"),
+                            SliderLabel(value: 30, label: "Festlich 2-stöckig (30 Pers.)")
+                        ]
+                    ),
+                    isRequired: true,
+                    order: 0
+                ),
+                CustomField(
+                    id: "cf-cake-tags",
+                    key: "taste_direction",
+                    title: "Geschmacksrichtung & Stil",
+                    subtitle: "Welche Charakteristik soll die Torte haben?",
+                    fieldType: .tasteProfile(availableTags: ["fruchtig", "süss", "nussig", "schokoladig", "säuerlich-frisch", "leicht", "üppig", "vegan möglich"]),
+                    isRequired: true,
+                    order: 1
+                ),
+                CustomField(
+                    id: "cf-cake-text",
+                    key: "dedication_text",
+                    title: "Aufschrift auf Marzipan-Schild",
+                    subtitle: "Handgeschriebene Widmung (z.B. Alles Gute zum 40. Geburtstag)",
+                    fieldType: .text(placeholder: "z.B. Alles Liebe zum Geburtstag!", maxLen: 35, isMultiline: false),
+                    isRequired: false,
+                    order: 2
                 )
             ],
             labelConfig: ManufacturerLabelConfig(
                 allowed: true,
-                headlinePlaceholder: "z.B. Sommerabend Special",
-                maxHeadlineLength: 24,
-                allowDedication: false,
-                maxDedicationLength: 0,
-                fixedBrandStamp: "+ SWISS CRAFT · GLETSCHER GELATO"
-            )
+                headlinePlaceholder: "z.B. Jubiläumstorte Steiner",
+                maxHeadlineLength: 30,
+                allowDedication: true,
+                maxDedicationLength: 60,
+                fixedBrandStamp: "+ SWISS CRAFT · ZOPF & ZEIT"
+            ),
+            allowsBespokeQuoteRequest: true,
+            bespokePlaceholder: "Beschreiben Sie besondere Wünsche: Deko (frische Blumen, Blattgold), Farbkonzept oder Unverträglichkeiten...",
+            bespokeTasteTags: ["fruchtig", "süss", "nussig", "schokoladig", "floral", "vegan möglich"]
         )
 
-        let gelatoCup = Product(
-            id: "prod-gelato-cup",
-            producerId: "prod-gletscher-gelato",
-            title: "Build-Your-Own Gelato Becher",
-            subtitle: "Kugeln & Toppings frei kombinieren",
-            description: "Tagesfrisches Gelato aus Berner Alpenmilch. Nur zur Abholung, damit alles perfekt gefroren bleibt.",
-            category: .iceCream,
-            basePrice: 6.50,
-            unitText: "Becher (3 Kugeln)",
-            weightGrams: 240,
-            isCustomizable: true,
-            stockQuantity: nil,
-            imageUrl: "gelato_hero",
-            tags: ["Tagesfrisch", "Abholung"],
-            config: gelatoConfig,
-            transactionMode: .instantCheckout,
-            shippingRestriction: .pickupOnly,
-            allergens: []
-        )
-
-        // Bespoke bakery product — quote-request only, no configurator.
         let bakeryCake = Product(
             id: "prod-bakery-cake",
             producerId: "prod-zopf-zeit",
             title: "Anlass-Torte & Festgebäck nach Mass",
-            subtitle: "Individuelle Offerte für Ihre Feier",
-            description: "Jede Torte wird als Einzelstück nach Ihren Vorgaben gebacken. Senden Sie uns eine Anfrage — wir melden uns mit einer persönlichen Offerte.",
+            subtitle: "Grösse, Biskuit, Füllung und Geschmacksprofil individuell abstimmen",
+            description: "Jede Torte wird als Einzelstück nach Ihren Vorgaben gebacken. Konfigurieren Sie Ihre Wunschtorte oder fordern Sie eine individuelle Offerte an.",
             category: .bakery,
-            basePrice: 0, // no fixed price — the producer prices it individually per offer
-            unitText: "Torte (8-16 Pers.)",
-            weightGrams: 1200,
-            isCustomizable: false,
+            basePrice: 0,
+            unitText: "Torte (6–30 Pers.)",
+            weightGrams: 1500,
+            isCustomizable: true,
             stockQuantity: nil,
             imageUrl: "bakery_hero",
-            tags: ["Festtorte", "Konditorei", "Nur auf Anfrage"],
-            config: nil,
+            tags: ["Festtorte", "Konditorei", "Offert-Option", "Abholung"],
+            config: bakeryConfig,
             transactionMode: .quoteRequest,
             shippingRestriction: .pickupOnly,
             allergens: [.gluten, .eggs, .milk]
         )
 
-        self.products = [coffeeCustom, coffeeGeisha, beerBox, chocolateBar, gelatoCup, bakeryCake]
+        // 6. 🍸 SPIRITS: Custom Botanical Spirit / Gin (Alpen-Botanicals, Trinkstärke-Slider)
+        let spiritsConfig = CustomizationConfig(
+            id: "cfg-spirits-gin",
+            productId: "prod-spirits-gin-custom",
+            archetype: .recipeBlend,
+            sliderTitle: "Botanical-Mischung (max. 3 Komponenten)",
+            targetTotal: 100,
+            targetUnit: "%",
+            totalWeightGrams: 500,
+            maxSelectableComponents: 3,
+            components: [
+                BlendComponent(id: "sp-wacholder", name: "Schweizer Alpen-Wacholder", origin: "Walliser Alpen", process: "Harzig & kräftig", notes: ["Wacholder", "Kiefer"], priceMultiplier: 1.05, hexColor: "2D5F3E", maxRatio: 100, inStock: true, stockQuantity: 60, allergens: []),
+                BlendComponent(id: "sp-zitrus", name: "Amalfi-Zitrone & Bergamotte", origin: "Süditalien", process: "Frisch & spritzig", notes: ["Zitrus", "Frisch"], priceMultiplier: 1.10, hexColor: "F4D03F", maxRatio: 100, inStock: true, stockQuantity: 80, allergens: []),
+                BlendComponent(id: "sp-floral", name: "Lavendel & Holunderblüte", origin: "Berner Seeland", process: "Floral & lieblich", notes: ["Lavendel", "Holunder"], priceMultiplier: 1.15, hexColor: "9B59B6", maxRatio: 100, inStock: true, stockQuantity: 40, allergens: []),
+                BlendComponent(id: "sp-wuerze", name: "Kardamom, Koriander & Rosa Pfeffer", origin: "Indien & Madagaskar", process: "Würzig & komplex", notes: ["Kardamom", "Pfeffer"], priceMultiplier: 1.10, hexColor: "C0392B", maxRatio: 100, inStock: true, stockQuantity: 50, allergens: [])
+            ],
+            options: [
+                CustomizationOption(
+                    key: "finish",
+                    title: "Reifung & Veredelung",
+                    defaultValue: "glass",
+                    isRequired: true,
+                    values: [
+                        OptionChoice(label: "Klassisch im Glasballon gereift (Klar)", value: "glass", priceDelta: 0),
+                        OptionChoice(label: "Im Schweizer Eichenholz-Fass gereift (+ CHF 8.00)", value: "oak_barrel", priceDelta: 8.0)
+                    ]
+                )
+            ],
+            customFields: [
+                CustomField(
+                    id: "cf-spirits-abv",
+                    key: "alcohol_strength",
+                    title: "Trinkstärke / Alkoholgehalt",
+                    subtitle: "Beeinflusst Intensität, Mundgefühl und Aromenbindung",
+                    fieldType: .slider(
+                        min: 41, max: 47, step: 1, unit: "% Vol.", defaultValue: 43,
+                        labels: [
+                            SliderLabel(value: 41, label: "Mild (41% Vol.)"),
+                            SliderLabel(value: 43, label: "Klassisch (43% Vol.)"),
+                            SliderLabel(value: 47, label: "Navy Strength (47% Vol.)")
+                        ]
+                    ),
+                    isRequired: true,
+                    order: 0
+                ),
+                CustomField(
+                    id: "cf-spirits-tags",
+                    key: "aroma_profile",
+                    title: "Aromatischer Schwerpunkt",
+                    subtitle: "Wählen Sie das Geschmacksprofil",
+                    fieldType: .tasteProfile(availableTags: ["wacholderbetont", "zitrisch", "floral", "würzig", "harzig", "herb", "lieblich"]),
+                    isRequired: false,
+                    order: 1
+                )
+            ],
+            labelConfig: ManufacturerLabelConfig(
+                allowed: true,
+                headlinePlaceholder: "z.B. Alpine Reserve Gin No. 01",
+                maxHeadlineLength: 28,
+                allowDedication: true,
+                maxDedicationLength: 45,
+                fixedBrandStamp: "+ SWISS CRAFT · MATTER DISTILLERS"
+            ),
+            allowsBespokeQuoteRequest: true,
+            bespokePlaceholder: "Eigener Brand: z.B. Hochzeits-Gin mit Botanicals aus dem eigenen Garten...",
+            bespokeTasteTags: ["wacholderbetont", "zitrisch-frisch", "floral", "würzig", "harzig", "herb"]
+        )
+
+        let spiritsGin = Product(
+            id: "prod-spirits-gin-custom",
+            producerId: "prod-matter-distillers",
+            title: "Custom Botanical Spirit / Gin (500ml)",
+            subtitle: "Botanical-Mischung (max. 3 Noten) & Trinkstärke (41–47% Vol.)",
+            description: "Wählen Sie bis zu 3 Botanical-Aromen aus Schweizer Alpenwacholder, Zitrus und Kräutern. Definieren Sie Trinkstärke und Fassreifung mit Apothekerflaschen-Etikett.",
+            category: .spirits,
+            basePrice: 46.00,
+            unitText: "500ml Flasche",
+            weightGrams: 950,
+            isCustomizable: true,
+            stockQuantity: nil,
+            imageUrl: "craft_brewery_hero",
+            tags: ["Small Batch", "Kupferkessel", "Kallnach"],
+            config: spiritsConfig,
+            transactionMode: .instantCheckout,
+            shippingRestriction: .standard,
+            allergens: []
+        )
+
+        // 7. 🍵 TEA: Custom Alpine Tea Blend (max 3 Basen, Intensitäts-Slider)
+        let teaConfig = CustomizationConfig(
+            id: "cfg-tea-blend",
+            productId: "prod-tea-blend-custom",
+            archetype: .recipeBlend,
+            sliderTitle: "Teebasen & Blüten (max. 3 Komponenten)",
+            targetTotal: 100,
+            targetUnit: "%",
+            totalWeightGrams: 100,
+            maxSelectableComponents: 3,
+            components: [
+                BlendComponent(id: "t-krauter", name: "Bio Engadiner Bergkräuter (Minze & Thymian)", origin: "Engadin 1'800m", process: "Handgepflückt", notes: ["Pfefferminze", "Bergthymian"], priceMultiplier: 1.10, hexColor: "27AE60", maxRatio: 100, inStock: true, stockQuantity: 80, allergens: []),
+                BlendComponent(id: "t-sencha", name: "Japanischer Bio Sencha Grüntee", origin: "Kagoshima", process: "Gedämpft & frisch", notes: ["Grasig", "Umami"], priceMultiplier: 1.15, hexColor: "52BE80", maxRatio: 100, inStock: true, stockQuantity: 60, allergens: []),
+                BlendComponent(id: "t-assam", name: "Assam FTGFOP Bio Schwarztee", origin: "Assam Indien", process: "Vollmundig & malzig", notes: ["Malz", "Würze"], priceMultiplier: 1.05, hexColor: "784212", maxRatio: 100, inStock: true, stockQuantity: 90, allergens: []),
+                BlendComponent(id: "t-rooibos", name: "Bio Rotbusch Super Grade (Koffeinfrei)", origin: "Südafrika", process: "Mild & nussig", notes: ["Süsslich", "Koffeinfrei"], priceMultiplier: 1.00, hexColor: "BA4A00", maxRatio: 100, inStock: true, stockQuantity: 100, allergens: []),
+                BlendComponent(id: "t-blueten", name: "Arven- & Kornblumenblüten", origin: "Engadiner Arvenwald", process: "Luftgetrocknet", notes: ["Arvenduft", "Floral"], priceMultiplier: 1.20, hexColor: "2980B9", maxRatio: 100, inStock: true, stockQuantity: 40, allergens: [])
+            ],
+            options: [],
+            customFields: [
+                CustomField(
+                    id: "cf-tea-intensity",
+                    key: "intensity",
+                    title: "Aromaintensität der Mischung",
+                    subtitle: "Bestimmt den empfohlenen Dosierungs- und Ziehzeit-Charakter",
+                    fieldType: .slider(
+                        min: 1, max: 3, step: 1, unit: "", defaultValue: 2,
+                        labels: [
+                            SliderLabel(value: 1, label: "Sanft & Zart (1/3)"),
+                            SliderLabel(value: 2, label: "Harmonisch Ausgewogen (2/3)"),
+                            SliderLabel(value: 3, label: "Kräftig & Aromatisch (3/3)")
+                        ]
+                    ),
+                    isRequired: true,
+                    order: 0
+                ),
+                CustomField(
+                    id: "cf-tea-tags",
+                    key: "taste_profile",
+                    title: "Wirkung & Geschmacksprofil",
+                    subtitle: "Wählen Sie das passende Aromaprofil",
+                    fieldType: .tasteProfile(availableTags: ["kräuterig", "floral", "fruchtig", "beruhigend", "belebend", "koffeinfrei", "wärmend"]),
+                    isRequired: false,
+                    order: 1
+                )
+            ],
+            labelConfig: ManufacturerLabelConfig(
+                allowed: true,
+                headlinePlaceholder: "z.B. Engadiner Abendruhe",
+                maxHeadlineLength: 26,
+                allowDedication: true,
+                maxDedicationLength: 40,
+                fixedBrandStamp: "+ SWISS CRAFT · ENGADIN TEA"
+            ),
+            allowsBespokeQuoteRequest: true,
+            bespokePlaceholder: "Spezialmischung: z.B. Reiner Arvenblüten-Tee mit Apfelstücken für ein Wellness-Hotel...",
+            bespokeTasteTags: ["kräuterig", "floral", "fruchtig", "beruhigend", "belebend", "koffeinfrei"]
+        )
+
+        let teaCustom = Product(
+            id: "prod-tea-blend-custom",
+            producerId: "prod-engadin-tea",
+            title: "Custom Alpine Tea Blend (100g Dose)",
+            subtitle: "Bergkräuter, Sencha oder Assam mit Arvenblüten frei kombinieren",
+            description: "Stellen Sie Ihre persönliche Teemischung aus bis zu 3 Schweizer Alpenkräutern und Grand Cru Teebasen zusammen. Inklusive geprägter Teedose.",
+            category: .tea,
+            basePrice: 18.50,
+            unitText: "100g Aromadose",
+            weightGrams: 100,
+            isCustomizable: true,
+            stockQuantity: nil,
+            imageUrl: "gelato_hero",
+            tags: ["Bio", "Alpenkräuter", "St. Moritz"],
+            config: teaConfig,
+            transactionMode: .instantCheckout,
+            shippingRestriction: .standard,
+            allergens: []
+        )
+
+        // 8. 🫒 DELI & SPICES: Custom Kräuter-Würzsalz (Schärfegrad-Slider 1-5, Mahlung)
+        let deliConfig = CustomizationConfig(
+            id: "cfg-deli-rub",
+            productId: "prod-deli-rub-custom",
+            archetype: .recipeBlend,
+            sliderTitle: "Gewürz- & Kräuteranteile (max. 3 Sorten)",
+            targetTotal: 100,
+            targetUnit: "%",
+            totalWeightGrams: 150,
+            maxSelectableComponents: 3,
+            components: [
+                BlendComponent(id: "dl-rosmarin", name: "Tessiner Bergrosmarin & Salbei", origin: "Vallemaggia", process: "Schonend luftgetrocknet", notes: ["Mediterran", "Harzig"], priceMultiplier: 1.05, hexColor: "1E8449", maxRatio: 100, inStock: true, stockQuantity: 90, allergens: []),
+                BlendComponent(id: "dl-chili", name: "Tessiner Peperoncini Flocken", origin: "Magadinoebene", process: "Sonnengereift & feurig", notes: ["Feurig", "Pikant"], priceMultiplier: 1.10, hexColor: "C0392B", maxRatio: 100, inStock: true, stockQuantity: 65, allergens: []),
+                BlendComponent(id: "dl-knoblauch", name: "Fermentierter schwarzer Knoblauch", origin: "Mendrisiotto", process: "Balsamisch & mild", notes: ["Umami", "Süsslich"], priceMultiplier: 1.20, hexColor: "2C3E50", maxRatio: 100, inStock: true, stockQuantity: 40, allergens: []),
+                BlendComponent(id: "dl-zitronenthymian", name: "Zitronenthymian & Meersalz", origin: "Lugano", process: "Zitronig-frisch", notes: ["Zitrus", "Frische"], priceMultiplier: 1.05, hexColor: "F4D03F", maxRatio: 100, inStock: true, stockQuantity: 110, allergens: []),
+                BlendComponent(id: "dl-pilze", name: "Wilde Tessiner Steinpilze & Wacholder", origin: "Centovalli", process: "Intensiv pilzig", notes: ["Steinpilz", "Wald"], priceMultiplier: 1.25, hexColor: "7E5109", maxRatio: 100, inStock: true, stockQuantity: 35, allergens: [])
+            ],
+            options: [
+                CustomizationOption(
+                    key: "grind_style",
+                    title: "Körnung & Mahlstufe",
+                    defaultValue: "coarse",
+                    isRequired: true,
+                    values: [
+                        OptionChoice(label: "Grobe Mühlenkörnung (Für Fleisch & BBQ)", value: "coarse", priceDelta: 0),
+                        OptionChoice(label: "Feines Tischstreusalz (Für Pasta & Salat)", value: "fine", priceDelta: 0),
+                        OptionChoice(label: "Knusprige Pyramiden-Flocken (+ CHF 2.00)", value: "flakes", priceDelta: 2.0)
+                    ]
+                )
+            ],
+            customFields: [
+                CustomField(
+                    id: "cf-deli-heat",
+                    key: "heat_level",
+                    title: "Schärfegrad (Peperoncini-Anteil)",
+                    subtitle: "Von mild-mediterran bis intensiv feurig",
+                    fieldType: .slider(
+                        min: 1, max: 5, step: 1, unit: " / 5", defaultValue: 2,
+                        labels: [
+                            SliderLabel(value: 1, label: "Mild (1/5)"),
+                            SliderLabel(value: 2, label: "Pikant (2/5)"),
+                            SliderLabel(value: 3, label: "Feurig (3/5)"),
+                            SliderLabel(value: 5, label: "Extrem Scharf (5/5)")
+                        ]
+                    ),
+                    isRequired: true,
+                    order: 0
+                ),
+                CustomField(
+                    id: "cf-deli-tags",
+                    key: "flavor_direction",
+                    title: "Aromen-Ausrichtung",
+                    subtitle: "Geschmacksprofil des Würzsalzes",
+                    fieldType: .tasteProfile(availableTags: ["mediterran", "scharf", "rauchig", "pilzig / umami", "zitronig", "knoblauchbetont"]),
+                    isRequired: false,
+                    order: 1
+                )
+            ],
+            labelConfig: ManufacturerLabelConfig(
+                allowed: true,
+                headlinePlaceholder: "z.B. Ticino BBQ Special",
+                maxHeadlineLength: 26,
+                allowDedication: true,
+                maxDedicationLength: 40,
+                fixedBrandStamp: "+ SWISS CRAFT · TICINO GUSTO"
+            ),
+            allowsBespokeQuoteRequest: true,
+            bespokePlaceholder: "Eigenkreation: z.B. Spezialrub für Wildfleisch mit Wacholder, Salbei und Kastanienmehl...",
+            bespokeTasteTags: ["mediterran", "scharf", "rauchig", "pilzig / umami", "zitronig", "kräuterig"]
+        )
+
+        let deliCustom = Product(
+            id: "prod-deli-rub-custom",
+            producerId: "prod-ticino-gusto",
+            title: "Individuelles Kräuter-Würzsalz (150g)",
+            subtitle: "Tessiner Kräuter (max. 3 Sorten) & Schärfegrad frei mischen",
+            description: "Kreieren Sie Ihr persönliches Gourmet-Würzsalz aus sonnengetrocknetem Rosmarin, schwarzem Knoblauch, Peperoncini und Meersalz.",
+            category: .deli,
+            basePrice: 15.50,
+            unitText: "150g Glas",
+            weightGrams: 150,
+            isCustomizable: true,
+            stockQuantity: nil,
+            imageUrl: "bakery_hero",
+            tags: ["Tessin", "Handgemacht", "Lugano"],
+            config: deliConfig,
+            transactionMode: .instantCheckout,
+            shippingRestriction: .standard,
+            allergens: []
+        )
+
+        self.products = [
+            coffeeCustom, coffeeGeisha,
+            gelatoCustomTub,
+            beerBox,
+            chocolateBar,
+            bakeryCake,
+            spiritsGin,
+            teaCustom,
+            deliCustom
+        ]
         self.activeProduct = coffeeCustom
 
         // Seed initial order
@@ -722,6 +1327,7 @@ class AtelierStore: ObservableObject {
                         RecipeItem(componentId: "c-colombia", componentName: "Kolumbien Huila", origin: "1'750m", ratio: 40, grams: 200)
                     ],
                     selections: ["grind": "espresso"],
+                    customFieldValues: ["roast_level": "Medium (Omniroast)"],
                     customLabel: CustomLabelData(
                         headline: "Julian's Morning Roast",
                         subtitle: "60% Yirgacheffe / 40% Huila",
@@ -743,6 +1349,25 @@ class AtelierStore: ObservableObject {
             scheduledBatchDate: "Dienstag, 08:00 Uhr"
         )
 
+        // Seed an ice cream bespoke quote request
+        let iceCreamQuote = Quote(
+            id: "seed-quote-2001",
+            quoteNumber: "OFF-2026-9104",
+            producerId: "prod-gletscher-gelato",
+            producerName: "Gletscher Gelato Bern",
+            customer: CustomerDetails(name: "Elena Meier", email: "elena.meier@gmx.ch", street: "Kramgasse 14", postalCode: "3011", city: "Bern", country: .ch),
+            items: [QuoteItem(productTitle: "Eigenkreation Gelato Pint (2x 500ml)", quantity: 2)],
+            customerNote: "Eigenkreation-Anfrage: Maracuja-Himbeer Sorbet mit geröstetem Bergthymian & rosa Pfeffer, eher fruchtig-säuerlich.",
+            selectedTasteTags: ["fruchtig", "sauer / erfrischend", "kräuter / floral", "vegan"],
+            bespokeDescription: "Maracuja-Himbeer Sorbet mit geröstetem Bergthymian & rosa Pfeffer, eher fruchtig-säuerlich und extra erfrischend.",
+            customFieldValues: ["sweetness_level": "70% (Fruchtig-Säuerlich)", "pint_base": "sorbet"],
+            status: .requested,
+            quotedPrice: nil,
+            quotedNote: nil,
+            createdAt: Date().addingTimeInterval(-3600)
+        )
+
         self.orders = [seedOrder]
+        self.quotes = [iceCreamQuote]
     }
 }

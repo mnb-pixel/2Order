@@ -162,6 +162,31 @@ struct CustomizationOption: Identifiable, Codable, Equatable {
     var values: [OptionChoice]
 }
 
+// MARK: - Dynamic Producer Custom Fields (Sliders, Steppers, Text, Taste Profiles)
+struct SliderLabel: Codable, Equatable {
+    var value: Double
+    var label: String
+}
+
+enum CustomFieldType: Codable, Equatable {
+    case slider(min: Double, max: Double, step: Double, unit: String, defaultValue: Double, labels: [SliderLabel]? = nil)
+    case stepper(min: Int, max: Int, unit: String, defaultValue: Int)
+    case text(placeholder: String, maxLen: Int, isMultiline: Bool)
+    case singleChoice(options: [OptionChoice])
+    case multipleChoice(options: [OptionChoice], maxSelections: Int?)
+    case tasteProfile(availableTags: [String])
+}
+
+struct CustomField: Identifiable, Codable, Equatable {
+    var id: String
+    var key: String
+    var title: String
+    var subtitle: String?
+    var fieldType: CustomFieldType
+    var isRequired: Bool = false
+    var order: Int = 0
+}
+
 // MARK: - Manufacturer Label Config
 struct ManufacturerLabelConfig: Codable, Equatable {
     var allowed: Bool
@@ -173,13 +198,24 @@ struct ManufacturerLabelConfig: Codable, Equatable {
 }
 
 // MARK: - Customization Archetype
-// recipeBlend = slider-driven ratio recipe (coffee, tea, spice)
-// buildABox   = free-quantity assembly (ice cream scoops, beer flight)
-// bespoke     = single made-to-order item with mostly custom fields (cake)
+// recipeBlend = slider-driven ratio recipe with optional origin limit (coffee, tea, spirits, spices)
+// flavorMix   = free flavor combination & inclusions (ice cream pint, chocolate toppings)
+// buildABox   = free-quantity assembly (beer crate)
+// bespoke     = made-to-order item with custom taste tags, sliders, and quote flow
 enum CustomizationArchetype: String, Codable {
     case recipeBlend = "recipe_blend"
+    case flavorMix = "flavor_mix"
     case buildABox = "build_a_box"
     case bespoke = "bespoke"
+
+    var displayName: String {
+        switch self {
+        case .recipeBlend: return "Rezeptur-Mischung"
+        case .flavorMix: return "Geschmacks-Mix"
+        case .buildABox: return "Box & Flight"
+        case .bespoke: return "Nach Mass / Bespoke"
+        }
+    }
 }
 
 // MARK: - Customization Config
@@ -191,9 +227,14 @@ struct CustomizationConfig: Identifiable, Codable, Equatable {
     var targetTotal: Double = 100
     var targetUnit: String = "%"
     var totalWeightGrams: Int
-    var components: [BlendComponent]
-    var options: [CustomizationOption]
+    var maxSelectableComponents: Int? = nil // e.g. max 3 beans for coffee
+    var components: [BlendComponent] = []
+    var options: [CustomizationOption] = []
+    var customFields: [CustomField] = []
     var labelConfig: ManufacturerLabelConfig
+    var allowsBespokeQuoteRequest: Bool = false
+    var bespokePlaceholder: String? = nil
+    var bespokeTasteTags: [String] = []
 }
 
 // MARK: - Transaction Mode & Shipping
@@ -262,17 +303,16 @@ struct CartItem: Identifiable, Codable {
     var unitPrice: Double
     var recipe: [RecipeItem]?
     var selections: [String: String]?
+    var customFieldValues: [String: String]?
+    var selectedTasteTags: [String]?
+    var bespokeDescription: String?
     var customLabel: CustomLabelData?
 
     var totalPrice: Double {
         unitPrice * Double(quantity)
     }
 
-    // Single source of truth for this item's LMIV/LIV-relevant allergens:
-    // the product's own fixed allergens plus whichever recipe components and
-    // custom-field choices actually ended up in this specific customization.
-    // Used both for the live customizer preview and for what gets persisted
-    // on the order, so the two can never diverge.
+    // Single source of truth for this item's LMIV/LIV-relevant allergens
     var aggregatedAllergens: [AllergenCode] {
         var set = Set<AllergenCode>(product.allergens)
         if let config = product.config {
@@ -447,6 +487,9 @@ struct Quote: Identifiable, Codable {
     var customer: CustomerDetails
     var items: [QuoteItem]
     var customerNote: String
+    var selectedTasteTags: [String]?
+    var bespokeDescription: String?
+    var customFieldValues: [String: String]?
     var status: QuoteStatus
     var quotedPrice: Double?
     var quotedNote: String?

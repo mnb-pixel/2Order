@@ -102,6 +102,31 @@ struct OrderTrackerView: View {
                                                 .foregroundColor(.secondary)
                                         }
 
+                                        if let specs = item.customFieldValues, !specs.isEmpty {
+                                            HStack(spacing: 8) {
+                                                ForEach(Array(specs.keys.sorted()), id: \.self) { key in
+                                                    if let val = specs[key] {
+                                                        Text("\(key): \(val)")
+                                                            .font(.system(size: 9.5, design: .monospaced))
+                                                            .foregroundColor(.secondary)
+                                                    }
+                                                }
+                                            }
+                                        }
+
+                                        if let tags = item.selectedTasteTags, !tags.isEmpty {
+                                            HStack(spacing: 4) {
+                                                ForEach(tags, id: \.self) { tag in
+                                                    Text("#\(tag)")
+                                                        .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                                        .padding(.horizontal, 5)
+                                                        .padding(.vertical, 2)
+                                                        .background(Color.black.opacity(0.06))
+                                                        .cornerRadius(3)
+                                                }
+                                            }
+                                        }
+
                                         if !item.aggregatedAllergens.isEmpty {
                                             Text("Enthält: \(item.aggregatedAllergens.map { $0.label }.joined(separator: ", "))")
                                                 .font(.system(size: 9, weight: .semibold))
@@ -200,7 +225,47 @@ private struct MyQuoteRow: View {
             }
 
             ForEach(quote.items) { item in
-                Text("\(item.quantity)x \(item.productTitle)").font(.system(size: 12))
+                Text("\(item.quantity)x \(item.productTitle)").font(.system(size: 13, weight: .semibold))
+            }
+
+            if !quote.customerNote.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("IHRE WUNSCHREZEPTUR:")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    Text("\"\(quote.customerNote)\"")
+                        .font(.system(size: 11, design: .serif))
+                        .italic()
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(UIColor.tertiarySystemGroupedBackground))
+                        .cornerRadius(6)
+                }
+            }
+
+            if let tags = quote.selectedTasteTags, !tags.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(tags, id: \.self) { tag in
+                        Text("#\(tag)")
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Color(red: 0.61, green: 0.29, blue: 0.18).opacity(0.12))
+                            .foregroundColor(Color(red: 0.61, green: 0.29, blue: 0.18))
+                            .cornerRadius(4)
+                    }
+                }
+            }
+
+            if let specs = quote.customFieldValues, !specs.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(specs.keys.sorted()), id: \.self) { key in
+                        if let val = specs[key] {
+                            Text("• \(key): \(val)")
+                                .font(.system(size: 9.5, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
 
             if quote.status == .quoted {

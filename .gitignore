@@ -29,3 +29,10 @@ build/
 .env
 .env.*
 !.env.example
+
+# Xcode / Apple
+.derivedData/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+.build/

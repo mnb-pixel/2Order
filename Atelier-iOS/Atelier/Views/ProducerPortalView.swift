@@ -261,7 +261,7 @@ struct ProducerPortalView: View {
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
 
-            ForEach(mtoProducts) { prod in
+            ForEach(mtoProducts, id: \.id) { (prod: Product) in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Text(prod.title).font(.system(size: 15, weight: .bold))
@@ -270,9 +270,24 @@ struct ProducerPortalView: View {
                     }
 
                     if let cfg = prod.config {
-                        Text("\(cfg.sliderTitle) · \(cfg.components.count) Schieber aktiv")
+                        HStack {
+                            Text(cfg.archetype.displayName.uppercased())
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.black.opacity(0.08))
+                                .cornerRadius(4)
+
+                            if let maxComp = cfg.maxSelectableComponents {
+                                Text("Max. \(maxComp) Sorten wählbar")
+                                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
+                                    .foregroundColor(Color(red: 0.61, green: 0.29, blue: 0.18))
+                            }
+                            Spacer()
+                        }
+
+                        Text("\(cfg.sliderTitle) · \(cfg.components.count) Komponenten")
                             .font(.system(size: 11, design: .monospaced))
-                            .foregroundColor(Color(red: 0.61, green: 0.29, blue: 0.18))
+                            .foregroundColor(.secondary)
 
                         ForEach(cfg.components) { comp in
                             HStack {
@@ -296,6 +311,31 @@ struct ProducerPortalView: View {
                                 .scaleEffect(0.7)
                             }
                         }
+
+                        // Configured Custom Fields Display
+                        if !cfg.customFields.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("HERSTELLER-EIGENE FELDER:")
+                                    .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                                    .foregroundColor(.secondary)
+                                    .padding(.top, 4)
+
+                                ForEach(cfg.customFields) { field in
+                                    HStack {
+                                        Image(systemName: fieldIcon(for: field.fieldType))
+                                            .font(.system(size: 9))
+                                            .foregroundColor(.secondary)
+                                        Text(field.title)
+                                            .font(.system(size: 10, weight: .medium))
+                                        Spacer()
+                                        Text(fieldSummary(for: field.fieldType))
+                                            .font(.system(size: 9, design: .monospaced))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                        }
                     }
                 }
                 .padding()
@@ -303,6 +343,34 @@ struct ProducerPortalView: View {
                 .cornerRadius(12)
                 .padding(.horizontal)
             }
+        }
+    }
+
+    private func fieldIcon(for type: CustomFieldType) -> String {
+        switch type {
+        case .slider: return "slider.horizontal.3"
+        case .stepper: return "plusminus"
+        case .tasteProfile: return "tag.fill"
+        case .text: return "text.cursor"
+        case .singleChoice: return "list.bullet"
+        case .multipleChoice: return "checklist"
+        }
+    }
+
+    private func fieldSummary(for type: CustomFieldType) -> String {
+        switch type {
+        case .slider(let min, let max, _, let unit, _, _):
+            return "\(Int(min))–\(Int(max))\(unit) Slider"
+        case .stepper(let min, let max, let unit, _):
+            return "\(min)–\(max) \(unit) Stepper"
+        case .tasteProfile(let tags):
+            return "\(tags.count) Geschmackstags"
+        case .text(_, let maxLen, _):
+            return "Textfeld (max. \(maxLen))"
+        case .singleChoice(let opt):
+            return "\(opt.count) Optionen"
+        case .multipleChoice(let opt, _):
+            return "\(opt.count) Mehrfachauswahl"
         }
     }
 
@@ -350,7 +418,12 @@ struct ProducerPortalView: View {
     private var quotesSection: some View {
         let producerQuotes = store.quotes.filter { $0.producerId == store.selectedProducer?.id }
         return VStack(alignment: .leading, spacing: 12) {
-            Text("Offerte → Rechnung läuft ausserhalb des ATELIER-Zahlungsflusses. Sie stellen die Rechnung selbst (z. B. Swiss-QR), der Kunde zahlt direkt an Sie.")
+            Text("EINGEHENDE EIGENKREATION- & OFFERTANFRAGEN")
+                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                .foregroundColor(.secondary)
+                .padding(.horizontal)
+
+            Text("Prüfen Sie Kundenwünsche, vergeben Sie einen individuellen Preis mit Begleitnachricht oder lehnen Sie die Anfrage ab.")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary)
                 .padding(.horizontal)
@@ -468,8 +541,6 @@ struct ProducerPortalView: View {
 }
 
 // MARK: - Portal Lock Screen
-// Lightweight, client-side deterrent — not real authentication. See the
-// caveat on Producer.portalPin.
 private struct PortalLockScreenView: View {
     @EnvironmentObject var store: AtelierStore
     let producer: Producer
@@ -566,30 +637,112 @@ private struct QuoteRow: View {
             }
 
             ForEach(quote.items) { item in
-                Text("\(item.quantity)x \(item.productTitle)").font(.system(size: 12))
+                Text("\(item.quantity)x \(item.productTitle)").font(.system(size: 13, weight: .semibold))
+            }
+
+            // Customer Bespoke Note & Taste Profile
+            if !quote.customerNote.isEmpty {
+                let note = quote.customerNote
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("KUNDENWUNSCH / REZEPTURIDEE:")
+                        .font(.system(size: 8, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+                    Text("\"\(note)\"")
+                        .font(.system(size: 11, design: .serif))
+                        .italic()
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(Color(UIColor.tertiarySystemGroupedBackground))
+                        .cornerRadius(6)
+                }
+            }
+
+            if let tags = quote.selectedTasteTags, !tags.isEmpty {
+                HStack(spacing: 4) {
+                    ForEach(tags, id: \.self) { tag in
+                        Text("#\(tag)")
+                            .font(.system(size: 8.5, weight: .bold, design: .monospaced))
+                            .padding(.horizontal, 6).padding(.vertical, 3)
+                            .background(Color(red: 0.61, green: 0.29, blue: 0.18).opacity(0.12))
+                            .foregroundColor(Color(red: 0.61, green: 0.29, blue: 0.18))
+                            .cornerRadius(4)
+                    }
+                }
+            }
+
+            if let specs = quote.customFieldValues, !specs.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(Array(specs.keys.sorted()), id: \.self) { key in
+                        if let val = specs[key] {
+                            Text("• \(key): \(val)")
+                                .font(.system(size: 9.5, design: .monospaced))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
             }
 
             if quote.status == .requested {
-                HStack {
-                    TextField("Offertpreis", text: $priceDraft)
-                        .keyboardType(.decimalPad)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
-                        .frame(width: 90)
-                    Button("Offerte senden") {
-                        guard let price = Double(priceDraft.replacingOccurrences(of: ",", with: ".")), price > 0 else { return }
-                        store.respondToQuote(quoteId: quote.id, price: price, note: noteDraft)
+                VStack(alignment: .leading, spacing: 6) {
+                    Divider()
+                    Text("OFFERTE BEANTWORTEN:")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 8) {
+                        TextField("CHF Preis", text: $priceDraft)
+                            .keyboardType(.decimalPad)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
+                            .frame(width: 100)
+
+                        TextField("Notiz an Kunden (z.B. Machbar ab Fr)", text: $noteDraft)
+                            .textFieldStyle(RoundedBorderTextFieldStyle())
                     }
-                    .font(.system(size: 12, weight: .bold))
-                    Button("Ablehnen") { store.declineQuote(quoteId: quote.id) }
-                        .font(.system(size: 12))
+
+                    HStack {
+                        Button(action: {
+                            guard let price = Double(priceDraft.replacingOccurrences(of: ",", with: ".")), price > 0 else { return }
+                            store.respondToQuote(quoteId: quote.id, price: price, note: noteDraft)
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("Offerte senden")
+                            }
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .background(Color.black)
+                            .cornerRadius(6)
+                        }
+
+                        Spacer()
+
+                        Button("Ablehnen") {
+                            store.declineQuote(quoteId: quote.id)
+                        }
+                        .font(.system(size: 11, weight: .medium))
                         .foregroundColor(.red)
+                    }
+                }
+            }
+
+            if quote.status == .quoted, let price = quote.quotedPrice {
+                HStack {
+                    Text("Offertierter Preis: CHF \(String(format: "%.2f", price))")
+                        .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        .foregroundColor(Color(red: 0.61, green: 0.29, blue: 0.18))
+                    if let note = quote.quotedNote, !note.isEmpty {
+                        Text("(\(note))")
+                            .font(.system(size: 10))
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 
             if quote.status == .accepted {
                 HStack {
                     Text("Angenommen zu CHF \(String(format: "%.2f", quote.quotedPrice ?? 0))")
-                        .font(.system(size: 12))
+                        .font(.system(size: 12, weight: .semibold))
                     Spacer()
                     Button("Rechnung erstellen") {
                         store.issueInvoice(quoteId: quote.id)
